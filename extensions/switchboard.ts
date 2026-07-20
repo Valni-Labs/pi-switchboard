@@ -1,12 +1,20 @@
 import { existsSync, realpathSync } from "node:fs";
+import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Model } from "@earendil-works/pi-ai";
+import type { Model, OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const PROVIDER_ID = "switchboard";
 const PROVIDER_NAME = "Switchboard";
 const DEFAULT_BASE_URL = "https://switchboard.valni.app";
+const DEFAULT_AUTH_BASE_URL = "https://api.valni.app";
+const DEVICE_AUTHORIZE_PATH = "/v1/device/authorize";
+const DEVICE_TOKEN_PATH = "/v1/device/token";
+const DEVICE_CLIENT_ID = "pi-switchboard";
+const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
+const MILLISECONDS_PER_SECOND = 1000;
+const SLOW_DOWN_EXTRA_SECONDS = 5;
 const INFERENCE_PATH = "/v1/switchboard/inference";
 const MODELS_PATH = "/v1/models";
 const SENTINEL_SEGMENT = "/pi-switchboard/";
@@ -62,12 +70,120 @@ function resolveBaseUrl(): string {
 	return process.env.SWITCHBOARD_BASE_URL ?? DEFAULT_BASE_URL;
 }
 
-function requireEnvironmentVariable(name: string): string {
-	const value = process.env[name];
-	if (!value) {
-		throw new Error(`${name} is not set; export it before starting pi (see pi-switchboard README)`);
+function resolveAuthBaseUrl(): string {
+	return process.env.SWITCHBOARD_AUTH_BASE_URL ?? DEFAULT_AUTH_BASE_URL;
+}
+
+let sessionEndUserId: string | null = null;
+
+function resolveEndUserId(): string {
+	const fromSession = sessionEndUserId ?? process.env.SWITCHBOARD_END_USER_ID;
+	if (!fromSession) {
+		throw new Error("Not signed in to Switchboard. Run /login in pi, or set SWITCHBOARD_API_KEY and SWITCHBOARD_END_USER_ID for key-based use.");
 	}
-	return value;
+	return fromSession;
+}
+
+interface DeviceTokenResponse {
+	access_token?: string;
+	refresh_token?: string;
+	expires_in?: number;
+	end_user_id?: string;
+	error?: string;
+}
+
+function sleep(milliseconds: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(resolve, milliseconds);
+		signal?.addEventListener("abort", () => {
+			clearTimeout(timer);
+			reject(new Error("Sign-in cancelled"));
+		}, { once: true });
+	});
+}
+
+function toCredentials(token: DeviceTokenResponse): OAuthCredentials {
+	if (!token.access_token || !token.refresh_token || !token.expires_in || !token.end_user_id) {
+		throw new Error(`Switchboard sign-in returned an incomplete token response`);
+	}
+	sessionEndUserId = token.end_user_id;
+	return {
+		refresh: token.refresh_token,
+		access: token.access_token,
+		expires: Date.now() + token.expires_in * MILLISECONDS_PER_SECOND,
+		endUserId: token.end_user_id,
+	};
+}
+
+async function deviceLogin(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
+	const authBase = resolveAuthBaseUrl();
+	const authorizeResponse = await fetch(`${authBase}${DEVICE_AUTHORIZE_PATH}`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ client_id: DEVICE_CLIENT_ID, device_label: hostname() }),
+	});
+	if (!authorizeResponse.ok) {
+		throw new Error(await describeFailure(authorizeResponse));
+	}
+	const authorization = (await authorizeResponse.json()) as {
+		device_code: string;
+		user_code: string;
+		verification_uri: string;
+		verification_uri_complete: string;
+		expires_in: number;
+		interval: number;
+	};
+
+	callbacks.onDeviceCode({
+		userCode: authorization.user_code,
+		verificationUri: authorization.verification_uri_complete,
+		intervalSeconds: authorization.interval,
+		expiresInSeconds: authorization.expires_in,
+	});
+
+	let intervalSeconds = authorization.interval;
+	while (true) {
+		await sleep(intervalSeconds * MILLISECONDS_PER_SECOND, callbacks.signal);
+		const pollResponse = await fetch(`${authBase}${DEVICE_TOKEN_PATH}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				grant_type: DEVICE_CODE_GRANT,
+				device_code: authorization.device_code,
+				client_id: DEVICE_CLIENT_ID,
+			}),
+		});
+		const token = (await pollResponse.json()) as DeviceTokenResponse;
+		if (token.access_token) {
+			callbacks.onProgress?.("Signed in to Switchboard");
+			return toCredentials(token);
+		}
+		if (token.error === "authorization_pending") continue;
+		if (token.error === "slow_down") {
+			intervalSeconds += SLOW_DOWN_EXTRA_SECONDS;
+			continue;
+		}
+		if (token.error === "access_denied") throw new Error("Sign-in was denied in the browser.");
+		if (token.error === "expired_token") throw new Error("The sign-in code expired. Run /login again.");
+		throw new Error(`Switchboard sign-in failed: ${token.error ?? pollResponse.status}`);
+	}
+}
+
+async function deviceRefresh(credentials: OAuthCredentials): Promise<OAuthCredentials> {
+	const response = await fetch(`${resolveAuthBaseUrl()}${DEVICE_TOKEN_PATH}`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({
+			grant_type: "refresh_token",
+			refresh_token: credentials.refresh,
+			client_id: DEVICE_CLIENT_ID,
+		}),
+	});
+	const token = (await response.json()) as DeviceTokenResponse;
+	if (!token.access_token) {
+		throw new Error("Switchboard session expired. Run /login again.");
+	}
+	return toCredentials(token);
 }
 
 function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string; error: string }): string {
@@ -75,6 +191,10 @@ function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string
 		case "SWB-1001":
 		case "SWB-1002":
 			return `Wrong application key. Log in to Switchboard at ${PORTAL_URL} and get a key, then set your application key and restart pi.`;
+		case "SWB-1013":
+			return "Your Switchboard session expired. Run /login to sign in again.";
+		case "SWB-1014":
+			return "Your Switchboard session is invalid. Run /login to sign in again.";
 		case "SWB-1007":
 			return `Out of Switchboard credit. Top up at ${PORTAL_URL} and retry.`;
 		case "SWB-1003":
@@ -198,7 +318,7 @@ function installEnvelopeFetch(): void {
 			method: "POST",
 			headers,
 			body: JSON.stringify({
-				user_id: requireEnvironmentVariable("SWITCHBOARD_END_USER_ID"),
+				user_id: resolveEndUserId(),
 				time: new Date().toISOString(),
 				idempotency_key: crypto.randomUUID(),
 				kind: { [kindTag]: nativeBody },
@@ -264,22 +384,27 @@ function toModelConfig(
 	};
 }
 
-async function discoverCatalog(baseUrl: string, apiKey: string): Promise<CatalogPage> {
-	const response = await fetch(`${baseUrl}${MODELS_PATH}`, {
-		headers: { Authorization: `Bearer ${apiKey}` },
+async function discoverCatalog(baseUrl: string): Promise<CatalogPage> {
+	const anonymous = await fetch(`${baseUrl}${MODELS_PATH}`, {
 		signal: AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS),
 	});
-	if (!response.ok) {
-		throw new Error(await describeFailure(response));
+	if (anonymous.ok) return (await anonymous.json()) as CatalogPage;
+
+	const apiKey = process.env.SWITCHBOARD_API_KEY;
+	if ((anonymous.status === 401 || anonymous.status === 403) && apiKey) {
+		const authed = await fetch(`${baseUrl}${MODELS_PATH}`, {
+			headers: { Authorization: `Bearer ${apiKey}` },
+			signal: AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS),
+		});
+		if (authed.ok) return (await authed.json()) as CatalogPage;
+		throw new Error(await describeFailure(authed));
 	}
-	return (await response.json()) as CatalogPage;
+	throw new Error(await describeFailure(anonymous));
 }
 
 export default async function (pi: ExtensionAPI) {
 	const baseUrl = resolveBaseUrl();
-	const apiKey = requireEnvironmentVariable("SWITCHBOARD_API_KEY");
-	requireEnvironmentVariable("SWITCHBOARD_END_USER_ID");
-	const [catalog, registry] = await Promise.all([discoverCatalog(baseUrl, apiKey), loadRegistryModels()]);
+	const [catalog, registry] = await Promise.all([discoverCatalog(baseUrl), loadRegistryModels()]);
 	const modelConfigs = [];
 	const skipped: string[] = [];
 	for (const catalogModel of catalog.models) {
@@ -311,6 +436,15 @@ export default async function (pi: ExtensionAPI) {
 		name: PROVIDER_NAME,
 		baseUrl,
 		apiKey: "$SWITCHBOARD_API_KEY",
+		oauth: {
+			name: "Switchboard",
+			login: deviceLogin,
+			refreshToken: deviceRefresh,
+			getApiKey: (credentials: OAuthCredentials) => {
+				if (typeof credentials.endUserId === "string") sessionEndUserId = credentials.endUserId;
+				return credentials.access;
+			},
+		},
 		models: modelConfigs,
 	});
 }

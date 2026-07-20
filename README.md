@@ -19,25 +19,32 @@ The extension discovers the catalog from `/v1/models` at startup, registers ever
 pi install https://github.com/Valni-Labs/pi-switchboard
 ```
 
-To pin a release instead of tracking `main`: `pi install https://github.com/Valni-Labs/pi-switchboard@v0.1.0`. Update later with `pi update --extensions`, remove with `pi remove`.
+3. Sign in and run:
 
-3. Export your credentials:
+```bash
+pi
+> /login        # pick Switchboard, approve in the browser
+> /model        # every catalog model, with prices
+```
+
+`/login` runs a device sign-in: pi shows a short code, your browser opens the Switchboard portal, you approve the device, and pi is signed in. No keys to copy and nothing to configure; the device holds only short-lived credentials that renew themselves, and you can revoke it any time from the portal under Devices. The model list is public, so `/model` and `pi --list-models` work even before signing in; signing in is needed only to run inference.
+
+To pin a release instead of tracking `main`: `pi install https://github.com/Valni-Labs/pi-switchboard@v0.3.0`. Update later with `pi update --extensions`, remove with `pi remove`.
+
+### Key-based use (CI and servers)
+
+For non-interactive environments, skip `/login` and export a key instead:
 
 ```bash
 export SWITCHBOARD_API_KEY=swb_...          # minted from the portal
 export SWITCHBOARD_END_USER_ID=your-user    # an end user registered on your account
-export SWITCHBOARD_BASE_URL=...             # optional, defaults to https://switchboard.valni.app
 ```
 
-4. Run pi:
+Your `swb_` key is a server-side credential. Your own shell or CI runner is the intended home for it; never embed the key or this extension in an app you distribute to others.
 
-```bash
-pi --provider switchboard --model claude-sonnet-5 "your prompt"
-```
+Optional overrides: `SWITCHBOARD_BASE_URL` (inference, defaults to https://switchboard.valni.app) and `SWITCHBOARD_AUTH_BASE_URL` (sign-in, defaults to https://api.valni.app).
 
-`pi --list-models` shows every model your key can reach, with vision and reasoning flags derived from Linecard capability profiles. For a quick trial from a clone without installing: `pi -e ./extensions/switchboard.ts --provider switchboard --model <id> -p "Say hi"`.
-
-Your `swb_` key is a server-side credential. Your own shell on your own machine is the intended home for it; never embed the key or this extension in an app you distribute to others.
+For a quick trial from a clone without installing: `pi -e ./extensions/switchboard.ts --provider switchboard --model <id> -p "Say hi"`.
 
 Tested against pi v0.80.x. The extension reads pi's bundled model registry for context windows and provider quirks, so a future pi release can move things; pin a tagged release if you want to update on your own schedule.
 
