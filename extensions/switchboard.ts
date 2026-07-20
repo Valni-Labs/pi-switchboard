@@ -15,6 +15,7 @@ const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 const UNKNOWN_CONTEXT_WINDOW = 0;
 const ERROR_DETAIL_LIMIT = 300;
 const CATALOG_FETCH_TIMEOUT_MS = 10_000;
+const PORTAL_URL = "https://platform.valni.ai";
 
 const KIND_TO_API = {
 	anthropic: "anthropic-messages",
@@ -69,6 +70,47 @@ function requireEnvironmentVariable(name: string): string {
 	return value;
 }
 
+function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string; error: string }): string {
+	switch (envelope.code) {
+		case "SWB-1001":
+		case "SWB-1002":
+			return `Wrong application key. Log in to Switchboard at ${PORTAL_URL} and get a key, then set SWITCHBOARD_API_KEY and restart pi.`;
+		case "SWB-1007":
+			return `Out of Switchboard credit. Top up at ${PORTAL_URL} and retry.`;
+		case "SWB-1003":
+		case "SWB-1004":
+		case "SWB-1008":
+			return "Over your rate limit. Wait a moment and retry, or raise the limit in the portal.";
+		case "SWB-1005":
+		case "SWB-1009":
+		case "SWB-1011":
+			return "A spend limit on this account was reached. Raise it in the portal to continue.";
+		case "SWB-1010":
+		case "SWB-1012":
+			return "This model is not enabled for this account. Switch models, or enable it in the portal.";
+		case "SWB-2005":
+		case "SWB-2006":
+		case "SWB-2007":
+		case "SWB-2008":
+			return "SWITCHBOARD_END_USER_ID does not match a registered end user on this account. Fix the variable or register the user, then restart pi.";
+		case "SWB-3001":
+		case "SWB-3005":
+			return "This model is no longer available in the catalog. Pick a different model.";
+	}
+	if (envelope.fault === "provider") {
+		return "The model provider is having trouble. Retry shortly, or switch to a different model.";
+	}
+	if (envelope.fault === "client") {
+		return `Switchboard rejected the request: ${envelope.error}.`;
+	}
+	return "Switchboard hit an internal problem. Not your fault. Retry shortly, and report the request id if it keeps happening.";
+}
+
+function userFacingMessage(envelope: SwitchboardErrorEnvelope & { code: string; error: string }, status: number): string {
+	const reference = envelope.requestId ? `${envelope.code}, request ${envelope.requestId}` : `${envelope.code}, HTTP ${status}`;
+	return `${switchboardGuidance(envelope)} [${reference}]`;
+}
+
 async function describeFailure(response: Response): Promise<string> {
 	const text = await response.text();
 	let envelope: SwitchboardErrorEnvelope;
@@ -80,9 +122,19 @@ async function describeFailure(response: Response): Promise<string> {
 	if (!envelope.code || !envelope.error) {
 		return `Switchboard HTTP ${response.status}: ${text.slice(0, ERROR_DETAIL_LIMIT)}`;
 	}
-	const requestSuffix = envelope.requestId ? ` request ${envelope.requestId}` : "";
-	const faultSuffix = envelope.fault ? ` fault ${envelope.fault}` : "";
-	return `Switchboard ${envelope.code}: ${envelope.error} (HTTP ${response.status}${faultSuffix}${requestSuffix})`;
+	return userFacingMessage({ ...envelope, code: envelope.code, error: envelope.error }, response.status);
+}
+
+async function translatedErrorResponse(kindTag: SwitchboardKind, response: Response): Promise<Response> {
+	const message = await describeFailure(response);
+	const body =
+		kindTag === "anthropic"
+			? { type: "error", error: { type: "api_error", message } }
+			: { error: { message, type: "api_error", param: null, code: null } };
+	return new Response(JSON.stringify(body), {
+		status: response.status,
+		headers: { "Content-Type": "application/json" },
+	});
 }
 
 function findPiAiDist(): string {
@@ -142,7 +194,7 @@ function installEnvelopeFetch(): void {
 			headers.set("Authorization", `Bearer ${anthropicStyleKey}`);
 			headers.delete("x-api-key");
 		}
-		return baseFetch(`${resolveBaseUrl()}${INFERENCE_PATH}`, {
+		const response = await baseFetch(`${resolveBaseUrl()}${INFERENCE_PATH}`, {
 			method: "POST",
 			headers,
 			body: JSON.stringify({
@@ -153,6 +205,8 @@ function installEnvelopeFetch(): void {
 			}),
 			signal: request.signal,
 		});
+		if (response.ok) return response;
+		return translatedErrorResponse(kindTag, response);
 	};
 }
 

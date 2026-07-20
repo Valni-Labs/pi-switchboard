@@ -48,7 +48,7 @@ Tested against pi v0.80.x. The extension reads pi's bundled model registry for c
 
 ## Errors
 
-Switchboard errors surface with their code, fault dimension, and request id, e.g. `Switchboard SWB-3001: Unknown model (HTTP 404 fault client request rqe_...)`.
+Switchboard errors are translated for the person at the keyboard, not the API developer, and wrapped in each provider's native error shape so pi displays them as plain messages. Account conditions come with their fix: a wrong key says to log in to Switchboard and get a key, an empty balance says to top up, spend and rate limits point at the portal, a disallowed model says to switch models. Provider outages say to retry or switch models, and anything internal to Switchboard says so and asks for the request id. Every message ends with the code and request id for support, e.g. `Out of Switchboard credit. Top up at https://platform.valni.ai and retry. [SWB-1007, request rqe_...]`.
 
 ## Not yet covered
 

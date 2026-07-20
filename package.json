@@ -1,6 +1,6 @@
 {
   "name": "pi-switchboard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Route the pi coding agent through Switchboard: one prepaid balance, spend controls, and a ledger for every model in the catalog",
   "keywords": ["pi-package"],
   "repository": {
