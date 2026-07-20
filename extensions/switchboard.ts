@@ -2,7 +2,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Model, OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
+import type { Credential, Model, ModelsStoreEntry, OAuthCredentials, OAuthLoginCallbacks, RefreshModelsContext } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const PROVIDER_ID = "switchboard";
@@ -384,27 +384,27 @@ function toModelConfig(
 	};
 }
 
-async function discoverCatalog(baseUrl: string): Promise<CatalogPage> {
-	const anonymous = await fetch(`${baseUrl}${MODELS_PATH}`, {
+async function discoverCatalog(baseUrl: string, bearer: string): Promise<CatalogPage> {
+	const response = await fetch(`${baseUrl}${MODELS_PATH}`, {
+		headers: { Authorization: `Bearer ${bearer}` },
 		signal: AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS),
 	});
-	if (anonymous.ok) return (await anonymous.json()) as CatalogPage;
-
-	const apiKey = process.env.SWITCHBOARD_API_KEY;
-	if ((anonymous.status === 401 || anonymous.status === 403) && apiKey) {
-		const authed = await fetch(`${baseUrl}${MODELS_PATH}`, {
-			headers: { Authorization: `Bearer ${apiKey}` },
-			signal: AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS),
-		});
-		if (authed.ok) return (await authed.json()) as CatalogPage;
-		throw new Error(await describeFailure(authed));
+	if (!response.ok) {
+		throw new Error(await describeFailure(response));
 	}
-	throw new Error(await describeFailure(anonymous));
+	return (await response.json()) as CatalogPage;
 }
 
-export default async function (pi: ExtensionAPI) {
-	const baseUrl = resolveBaseUrl();
-	const [catalog, registry] = await Promise.all([discoverCatalog(baseUrl), loadRegistryModels()]);
+function credentialBearer(credential: Credential | undefined): string | null {
+	if (!credential) return null;
+	if (credential.type === "oauth") {
+		if (typeof credential.endUserId === "string") sessionEndUserId = credential.endUserId;
+		return credential.access;
+	}
+	return credential.key ?? process.env.SWITCHBOARD_API_KEY ?? null;
+}
+
+function buildModelConfigs(catalog: CatalogPage, registry: Record<string, RegistryModel>) {
 	const modelConfigs = [];
 	const skipped: string[] = [];
 	for (const catalogModel of catalog.models) {
@@ -426,11 +426,16 @@ export default async function (pi: ExtensionAPI) {
 	if (skipped.length > 0) {
 		console.error(`pi-switchboard: skipped model(s) with no recognized kind: ${skipped.join(", ")}`);
 	}
-	if (modelConfigs.length === 0) {
-		throw new Error(
-			`pi-switchboard: no models available from ${baseUrl}${MODELS_PATH} (${catalog.models.length} entries total)`,
-		);
-	}
+	return modelConfigs;
+}
+
+export default async function (pi: ExtensionAPI) {
+	const baseUrl = resolveBaseUrl();
+	const registry = await loadRegistryModels();
+	const environmentKey = process.env.SWITCHBOARD_API_KEY;
+	const startupModels = environmentKey
+		? buildModelConfigs(await discoverCatalog(baseUrl, environmentKey), registry)
+		: [];
 	installEnvelopeFetch();
 	pi.registerProvider(PROVIDER_ID, {
 		name: PROVIDER_NAME,
@@ -445,6 +450,24 @@ export default async function (pi: ExtensionAPI) {
 				return credentials.access;
 			},
 		},
-		models: modelConfigs,
+		models: startupModels,
+		refreshModels: async (context: RefreshModelsContext) => {
+			const bearer = credentialBearer(context.credential);
+			if (!bearer) {
+				await context.store.delete();
+				return [];
+			}
+			const stored = await context.store.read();
+			if (!context.allowNetwork) {
+				return stored ? ([...stored.models] as ReturnType<typeof buildModelConfigs>) : startupModels;
+			}
+			const catalog = await discoverCatalog(baseUrl, bearer);
+			const configs = buildModelConfigs(catalog, registry);
+			await context.store.write({
+				models: configs as unknown as ModelsStoreEntry["models"],
+				checkedAt: Math.floor(Date.now() / MILLISECONDS_PER_SECOND),
+			});
+			return configs;
+		},
 	});
 }

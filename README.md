@@ -27,9 +27,9 @@ pi
 > /model        # every catalog model, with prices
 ```
 
-`/login` runs a device sign-in: pi shows a short code, your browser opens the Switchboard portal, you approve the device, and pi is signed in. No keys to copy and nothing to configure; the device holds only short-lived credentials that renew themselves, and you can revoke it any time from the portal under Devices. The model list is public, so `/model` and `pi --list-models` work even before signing in; signing in is needed only to run inference.
+`/login` runs a device sign-in: pi shows a short code, your browser opens the Switchboard portal, you approve the device, and pi is signed in. No keys to copy and nothing to configure; the device holds only short-lived credentials that renew themselves, and you can revoke it any time from the portal under Devices. Signed out, Switchboard shows no models at all; the moment you sign in, the catalog loads live from your account, so `/model` reflects your real-time configuration.
 
-To pin a release instead of tracking `main`: `pi install https://github.com/Valni-Labs/pi-switchboard@v0.3.0`. Update later with `pi update --extensions`, remove with `pi remove`.
+To pin a release instead of tracking `main`: `pi install https://github.com/Valni-Labs/pi-switchboard@v0.3.1`. Update later with `pi update --extensions`, remove with `pi remove`.
 
 ### Key-based use (CI and servers)
 
