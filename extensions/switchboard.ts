@@ -74,7 +74,7 @@ function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string
 	switch (envelope.code) {
 		case "SWB-1001":
 		case "SWB-1002":
-			return `Wrong application key. Log in to Switchboard at ${PORTAL_URL} and get a key, then set SWITCHBOARD_API_KEY and restart pi.`;
+			return `Wrong application key. Log in to Switchboard at ${PORTAL_URL} and get a key, then set your application key and restart pi.`;
 		case "SWB-1007":
 			return `Out of Switchboard credit. Top up at ${PORTAL_URL} and retry.`;
 		case "SWB-1003":
@@ -92,7 +92,7 @@ function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string
 		case "SWB-2006":
 		case "SWB-2007":
 		case "SWB-2008":
-			return "SWITCHBOARD_END_USER_ID does not match a registered end user on this account. Fix the variable or register the user, then restart pi.";
+			return "Your end user id is not registered on this account. Fix the end user id or register it in the portal, then restart pi.";
 		case "SWB-3001":
 		case "SWB-3005":
 			return "This model is no longer available in the catalog. Pick a different model.";
