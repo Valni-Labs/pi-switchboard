@@ -13,7 +13,14 @@ The extension discovers the catalog from `/v1/models` at startup, registers ever
 ## Install
 
 1. Install pi: `npm install -g @earendil-works/pi-coding-agent`
-2. Copy `switchboard.ts` into `~/.pi/agent/extensions/`
+2. Install this package:
+
+```bash
+pi install https://github.com/Valni-Labs/pi-switchboard
+```
+
+To pin a release instead of tracking `main`: `pi install https://github.com/Valni-Labs/pi-switchboard@v0.1.0`. Update later with `pi update --extensions`, remove with `pi remove`.
+
 3. Export your credentials:
 
 ```bash
@@ -28,7 +35,11 @@ export SWITCHBOARD_BASE_URL=...             # optional, defaults to https://swit
 pi --provider switchboard --model claude-sonnet-5 "your prompt"
 ```
 
-`pi --list-models` shows every model your key can reach, with vision and reasoning flags derived from Linecard capability profiles. For a quick trial without installing globally: `pi -e ./switchboard.ts --provider switchboard --model <id> -p "Say hi"`.
+`pi --list-models` shows every model your key can reach, with vision and reasoning flags derived from Linecard capability profiles. For a quick trial from a clone without installing: `pi -e ./extensions/switchboard.ts --provider switchboard --model <id> -p "Say hi"`.
+
+Your `swb_` key is a server-side credential. Your own shell on your own machine is the intended home for it; never embed the key or this extension in an app you distribute to others.
+
+Tested against pi v0.80.x. The extension reads pi's bundled model registry for context windows and provider quirks, so a future pi release can move things; pin a tagged release if you want to update on your own schedule.
 
 ## Model metadata
 

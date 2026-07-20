@@ -14,6 +14,7 @@ const MICRO_CENTS_PER_DOLLAR = 100_000_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 const UNKNOWN_CONTEXT_WINDOW = 0;
 const ERROR_DETAIL_LIMIT = 300;
+const CATALOG_FETCH_TIMEOUT_MS = 10_000;
 
 const KIND_TO_API = {
 	anthropic: "anthropic-messages",
@@ -212,6 +213,7 @@ function toModelConfig(
 async function discoverCatalog(baseUrl: string, apiKey: string): Promise<CatalogPage> {
 	const response = await fetch(`${baseUrl}${MODELS_PATH}`, {
 		headers: { Authorization: `Bearer ${apiKey}` },
+		signal: AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS),
 	});
 	if (!response.ok) {
 		throw new Error(await describeFailure(response));
