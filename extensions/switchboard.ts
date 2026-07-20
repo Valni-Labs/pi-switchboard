@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
@@ -92,6 +93,15 @@ interface DeviceTokenResponse {
 	error?: string;
 }
 
+function openInBrowser(url: string): void {
+	const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+	const commandArguments = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+	try {
+		spawn(command, commandArguments, { detached: true, stdio: "ignore" }).unref();
+	} catch {
+	}
+}
+
 function sleep(milliseconds: number, signal?: AbortSignal): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(resolve, milliseconds);
@@ -140,6 +150,7 @@ async function deviceLogin(callbacks: OAuthLoginCallbacks): Promise<OAuthCredent
 		intervalSeconds: authorization.interval,
 		expiresInSeconds: authorization.expires_in,
 	});
+	openInBrowser(authorization.verification_uri_complete);
 
 	let intervalSeconds = authorization.interval;
 	while (true) {
