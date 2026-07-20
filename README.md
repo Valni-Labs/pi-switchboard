@@ -1,6 +1,14 @@
 # pi-switchboard
 
-A [pi](https://github.com/badlogic/pi-mono) extension that routes the pi coding agent through Switchboard. One file, no fork: pi keeps its own Anthropic wire client for request serialization and SSE parsing; the extension wraps each request in the Switchboard router envelope (`user_id`, `time`, `idempotency_key`, `kind.anthropic`) and sends it to `/v1/switchboard/inference` with your `swb_` key. Responses stream back as untranslated Anthropic events, so every pi feature that works against Anthropic directly (tool calls, streaming, thinking) works through Switchboard.
+A [pi](https://github.com/badlogic/pi-mono) extension that routes the pi coding agent through Switchboard. One file, no fork. All three Switchboard kinds are supported:
+
+| Switchboard kind | pi API | Examples |
+|---|---|---|
+| `anthropic` | `anthropic-messages` | Claude Sonnet 5, Opus 4.8, Fable 5 |
+| `openai_generic` | `openai-completions` | DeepSeek, Kimi, GLM, Grok, GPT-5.x |
+| `openai_pro` | `openai-responses` | GPT-5.3 Codex, GPT-5.x Pro |
+
+The extension discovers the catalog from `/v1/models` at startup, registers every model under a `switchboard` provider with pi's matching wire client, and installs a fetch interceptor scoped to a sentinel URL path. pi's own SDK clients serialize requests and parse streams natively; the interceptor only wraps each request in the Switchboard router envelope (`user_id`, `time`, `idempotency_key`, `kind.<tag>`) and sends it to `/v1/switchboard/inference`. Responses stream back as untranslated provider events, so tool calls, streaming, thinking, and prompt caching all work exactly as they do against the providers directly, while every request books to your Switchboard ledger.
 
 ## Install
 
@@ -17,26 +25,21 @@ export SWITCHBOARD_BASE_URL=...             # optional, defaults to https://swit
 4. Run pi:
 
 ```bash
-pi --provider switchboard --model <model-id> "your prompt"
+pi --provider switchboard --model claude-sonnet-5 "your prompt"
 ```
 
-`pi --list-models` shows the available Switchboard models. The model list is discovered live from `/v1/models` at startup, so it always reflects what your key can actually reach.
+`pi --list-models` shows every model your key can reach, with vision and reasoning flags derived from Linecard capability profiles. For a quick trial without installing globally: `pi -e ./switchboard.ts --provider switchboard --model <id> -p "Say hi"`.
 
-For a quick trial without installing the extension globally:
+## Model metadata
 
-```bash
-pi -e ./switchboard.ts --provider switchboard --model <model-id> -p "Say hi"
-```
+- Per-token costs come from the Switchboard price sheet (`prices` in `/v1/models`), so pi's in-session cost display tracks what the ledger will bill. Cache-write pricing is not in the price sheet and displays as zero; billed truth is always `GET /v1/switchboard/usage`.
+- Context windows, display names, thinking-level maps, and provider quirks are copied from pi's built-in model registry when the Switchboard model id matches a known model (all Claude and GPT ids do). Unknown ids get a conservative default: context window unknown to pi, `max_tokens` field, `system` role instead of `developer` (some OpenAI-compatible providers reject `developer`).
 
-## Behavior
+## Errors
 
-- Only models served over the `anthropic-messages` wire format are registered (that is what pi's Anthropic client emits). OpenAI-compatible and Responses models are not exposed yet.
-- Every request books against the `SWITCHBOARD_END_USER_ID` you exported; usage and spend land in your Switchboard ledger as usual. Check billed truth with `GET /v1/switchboard/usage` — the cost figures pi prints in its UI are local estimates and currently show zero.
-- Errors surface with their Switchboard code, fault dimension, and request id, e.g. `Switchboard SWB-3001: Unknown model (HTTP 404 fault client request rqe_...)`.
+Switchboard errors surface with their code, fault dimension, and request id, e.g. `Switchboard SWB-3001: Unknown model (HTTP 404 fault client request rqe_...)`.
 
 ## Not yet covered
 
-- `openai_generic` / `openai_pro` kind models (needs the same client-injection treatment for pi's OpenAI clients)
-- Feeding Linecard prices into pi's per-model cost display
-- Extended thinking uses budget-based parameters; adaptive-thinking Claude models are untested through this path
-- Context-overflow error normalization for pi's auto-compaction
+- Context-overflow error normalization for pi's auto-compaction (unknown ids have no context window, so pi cannot preemptively compact for them)
+- Per-model quirk knowledge for non-registry ids beyond the conservative defaults; this belongs in Linecard capability profiles long-term
