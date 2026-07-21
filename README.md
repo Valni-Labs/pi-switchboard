@@ -4,7 +4,7 @@
 [![pi](https://img.shields.io/badge/pi-v0.80.x-334155)](https://github.com/badlogic/pi-mono)
 [![Switchboard](https://img.shields.io/badge/Switchboard-valni.app-0ea5e9)](https://valni.app/switchboard/)
 
-Every model, in your coding agent, on one prepaid balance. pi-switchboard connects [pi](https://github.com/badlogic/pi-mono) to [Switchboard](https://valni.app/switchboard/): sign in once and `/model` fills with the whole catalog. Claude, GPT, Gemini, DeepSeek, Kimi, GLM, Grok, priced per token, with no subscription and no provider accounts.
+Every model, in your coding agent, on one prepaid balance. pi-switchboard connects [pi](https://github.com/badlogic/pi-mono) to [Switchboard](https://valni.app/switchboard/): sign in once and `/model` fills with every Switchboard model that pi-switchboard supports. Claude and OpenAI/OpenAI-compatible models, priced per token, with no subscription and no provider accounts.
 
 Explore Switchboard at [valni.app/switchboard](https://valni.app/switchboard/). Manage your balance, usage, spend controls, and devices at [valni.app/platform](https://valni.app/platform).
 
