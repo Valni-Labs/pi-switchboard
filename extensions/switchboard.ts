@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Credential, Model, ModelsStoreEntry, OAuthCredentials, OAuthLoginCallbacks, RefreshModelsContext } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -428,7 +428,13 @@ function buildModelConfigs(catalog: ModelsPage, registry: Record<string, Registr
 	return modelConfigs;
 }
 
+function extensionVersion(): string {
+	const packagePath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+	return (JSON.parse(readFileSync(packagePath, "utf8")) as { version: string }).version;
+}
+
 export default async function (pi: ExtensionAPI) {
+	console.error(`pi-switchboard v${extensionVersion()}`);
 	const baseUrl = resolveBaseUrl();
 	const registry = await loadRegistryModels();
 	const environmentKey = process.env.SWITCHBOARD_API_KEY;
