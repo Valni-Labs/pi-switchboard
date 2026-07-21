@@ -29,7 +29,7 @@ pi
 
 `/login` runs a device sign-in: pi shows a short code and opens your browser on the Switchboard portal; you approve the device (signing in first if your browser session lapsed brings you right back to the approval), and pi picks it up within seconds. No keys to copy and nothing to configure; the device holds only short-lived credentials that renew themselves, and you can revoke it any time from the portal under Devices. Signed out, Switchboard shows no models at all; the moment you sign in, the catalog loads live from your account, so `/model` reflects your real-time configuration.
 
-To pin a release instead of tracking `main`: `pi install https://github.com/Valni-Labs/pi-switchboard@v0.3.2`. Update later with `pi update --extensions`, remove with `pi remove`.
+To pin a release instead of tracking `main`: `pi install https://github.com/Valni-Labs/pi-switchboard@v0.3.3`. Update later with `pi update --extensions`, remove with `pi remove`.
 
 ### Key-based use (CI and servers)
 
@@ -55,7 +55,7 @@ Tested against pi v0.80.x. The extension reads pi's bundled model registry for c
 
 ## Errors
 
-Switchboard errors are translated for the person at the keyboard, not the API developer, and wrapped in each provider's native error shape so pi displays them as plain messages. Account conditions come with their fix: a wrong key says to log in to Switchboard and get a key, an empty balance says to top up, spend and rate limits point at the portal, a disallowed model says to switch models. Provider outages say to retry or switch models, and anything internal to Switchboard says so and asks for the request id. Every message ends with the code and request id for support, e.g. `Out of Switchboard credit. Top up at https://platform.valni.ai and retry. [SWB-1007, request rqe_...]`.
+Switchboard errors are translated for the person at the keyboard, not the API developer, and wrapped in each provider's native error shape so pi displays them as plain messages. Account conditions come with their fix: a wrong key says to log in to Switchboard and get a key, an empty balance says to top up, spend and rate limits point at the portal, a disallowed model says to switch models. Provider outages say to retry or switch models, and anything internal to Switchboard says so and asks for the request id. Every message ends with the code and request id for support, e.g. `Out of Switchboard credit. Top up at https://valni.app/platform and retry. [SWB-1007, request rqe_...]`.
 
 ## Not yet covered
 

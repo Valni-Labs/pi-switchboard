@@ -23,7 +23,7 @@ const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 const UNKNOWN_CONTEXT_WINDOW = 0;
 const ERROR_DETAIL_LIMIT = 300;
 const CATALOG_FETCH_TIMEOUT_MS = 10_000;
-const PORTAL_URL = "https://platform.valni.ai";
+const PORTAL_URL = "https://valni.app/platform";
 
 const KIND_TO_API = {
 	anthropic: "anthropic-messages",
