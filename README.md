@@ -1,14 +1,28 @@
 # pi-switchboard
 
-A [pi](https://github.com/badlogic/pi-mono) extension that routes the pi coding agent through Switchboard. One file, no fork. All three Switchboard kinds are supported:
+[![Version](https://img.shields.io/github/v/tag/Valni-Labs/pi-switchboard?label=version&sort=semver&color=0284c7)](https://github.com/Valni-Labs/pi-switchboard/tags)
+[![pi](https://img.shields.io/badge/pi-v0.80.x-334155)](https://github.com/badlogic/pi-mono)
+[![Switchboard](https://img.shields.io/badge/Switchboard-valni.app-0ea5e9)](https://valni.app/switchboard/)
 
-| Switchboard kind | pi API | Examples |
-|---|---|---|
-| `anthropic` | `anthropic-messages` | Claude Sonnet 5, Opus 4.8, Fable 5 |
-| `openai_generic` | `openai-completions` | DeepSeek, Kimi, GLM, Grok, GPT-5.x |
-| `openai_pro` | `openai-responses` | GPT-5.3 Codex, GPT-5.x Pro |
+Every model, in your coding agent, on one prepaid balance. pi-switchboard connects [pi](https://github.com/badlogic/pi-mono) to [Switchboard](https://valni.app/switchboard/): sign in once and `/model` fills with every Switchboard model that pi-switchboard supports. Claude and OpenAI/OpenAI-compatible models, priced per token, with no subscription and no provider accounts.
 
-The extension discovers the catalog from `/v1/models` at startup, registers every model under a `switchboard` provider with pi's matching wire client, and installs a fetch interceptor scoped to a sentinel URL path. pi's own SDK clients serialize requests and parse streams natively; the interceptor only wraps each request in the Switchboard router envelope (`user_id`, `time`, `idempotency_key`, `kind.<tag>`) and sends it to `/v1/switchboard/inference`. Responses stream back as untranslated provider events, so tool calls, streaming, thinking, and prompt caching all work exactly as they do against the providers directly, while every request books to your Switchboard ledger.
+Explore Switchboard at [valni.app/switchboard](https://valni.app/switchboard/). Manage your balance, usage, spend controls, and devices at [valni.app/platform](https://valni.app/platform).
+
+## How does Switchboard help?
+
+**Full native power, or we don't serve it.** You never get less from a model through Switchboard than you would going direct. Supported models run in their native formats, so streaming, tool calling, thinking, and prompt caching work at the model's full capability. Switching models is picking a different one from the list.
+
+**No keys to manage.** `/login` signs your device in from the browser. Credentials are short-lived and renew themselves, and you can revoke a device any time from the portal. Nothing to copy, nothing to paste, nothing to leak.
+
+**Every token metered.** Input, output, cache writes, cache reads, and reasoning, itemized at provider-exact rates with cached-prompt discounts included. You know what a session costs the moment it finishes.
+
+**Spend stays where you set it.** Daily and monthly caps, rate limits, and model policy, enforced before a request runs. A runaway session stops at your ceiling, not at your card statement.
+
+**A catalog you can trust.** Capabilities, configuration, and per-token prices for every model, human-verified in [Linecard](https://valni.app/linecard) before they go live. Compare the new frontier model against your current one before sending it a single request.
+
+**One bill.** One prepaid balance covers every provider and settles to a single itemized statement. No subscription; a flat platform fee applies only when you top up. [Pricing](https://valni.app/pricing) has the details.
+
+Working with a team, or building an app on Switchboard? Same account, more people: start from the [team quickstart](https://valni.app/quickstart/pi-team) or the [Switchboard docs](https://valni.app/switchboard/).
 
 ## Install
 
@@ -29,7 +43,7 @@ pi
 
 `/login` runs a device sign-in: pi shows a short code and opens your browser on the Switchboard portal; you approve the device (signing in first if your browser session lapsed brings you right back to the approval), and pi picks it up within seconds. No keys to copy and nothing to configure; the device holds only short-lived credentials that renew themselves, and you can revoke it any time from the portal under Devices. Signed out, Switchboard shows no models at all; the moment you sign in, the catalog loads live from your account, so `/model` reflects your real-time configuration.
 
-To pin a release instead of tracking `main`: `pi install https://github.com/Valni-Labs/pi-switchboard@v0.3.3`. Update later with `pi update --extensions`, remove with `pi remove`.
+To pin a release instead of tracking `main`: `pi install https://github.com/Valni-Labs/pi-switchboard@v0.3.4`. Update later with `pi update --extensions`, remove with `pi remove`.
 
 ### Key-based use (CI and servers)
 
