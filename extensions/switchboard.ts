@@ -23,6 +23,7 @@ const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 const UNKNOWN_CONTEXT_WINDOW = 0;
 const ERROR_DETAIL_LIMIT = 300;
 const CATALOG_FETCH_TIMEOUT_MS = 10_000;
+const MICRO_CENTS_PER_DOLLAR = 100_000_000;
 const PORTAL_URL = "https://valni.app/platform";
 
 const KIND_TO_API = {
@@ -33,24 +34,29 @@ const KIND_TO_API = {
 
 type SwitchboardKind = keyof typeof KIND_TO_API;
 
-const WIRE_FORMAT_TO_KIND: Record<string, SwitchboardKind> = {
-	"anthropic-messages": "anthropic",
-	"openai-compat": "openai_generic",
-	"openai-responses": "openai_pro",
-};
+interface KindProfile {
+	model: string;
+	maxTokensCeiling?: number;
+	vision?: boolean;
+	thinking?: { modes: string[] } | false;
+	reasoningEffort?: string[] | false;
+}
 
-interface PickerModel {
+interface ModelRecord {
 	id: string;
-	display_name: string;
-	context_window: number;
-	max_output_tokens: number | null;
-	input_formats: string[];
-	capabilities: string[];
-	wire_format: string;
+	kind: Record<string, KindProfile>;
+}
+
+interface ModelRecordPrice {
+	input_micro_cents_per_mtok: number;
+	output_micro_cents_per_mtok: number;
+	cached_input_micro_cents_per_mtok: number | null;
+	effective_at: number;
 }
 
 interface ModelsPage {
-	models: PickerModel[];
+	models: ModelRecord[];
+	prices: Record<string, ModelRecordPrice>;
 }
 
 interface SwitchboardErrorEnvelope {
@@ -342,18 +348,42 @@ function installEnvelopeFetch(): void {
 	};
 }
 
-function toModelConfig(pickerModel: PickerModel, kindTag: SwitchboardKind, registryModel: RegistryModel | undefined) {
+function supportsReasoning(kindTag: SwitchboardKind, profile: KindProfile): boolean | undefined {
+	const declared = kindTag === "anthropic" ? profile.thinking : profile.reasoningEffort;
+	if (declared === undefined) return undefined;
+	if (declared === false) return false;
+	if (Array.isArray(declared)) return declared.length > 0;
+	return declared.modes.length > 0;
+}
+
+function toCost(price: ModelRecordPrice | undefined, registryModel: RegistryModel | undefined) {
+	if (price === undefined) return registryModel?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 	return {
-		id: pickerModel.id,
-		name: pickerModel.display_name,
+		input: price.input_micro_cents_per_mtok / MICRO_CENTS_PER_DOLLAR,
+		output: price.output_micro_cents_per_mtok / MICRO_CENTS_PER_DOLLAR,
+		cacheRead: (price.cached_input_micro_cents_per_mtok ?? 0) / MICRO_CENTS_PER_DOLLAR,
+		cacheWrite: 0,
+	};
+}
+
+function toModelConfig(
+	record: ModelRecord,
+	kindTag: SwitchboardKind,
+	profile: KindProfile,
+	price: ModelRecordPrice | undefined,
+	registryModel: RegistryModel | undefined,
+) {
+	return {
+		id: record.id,
+		name: registryModel?.name ?? record.id,
 		api: KIND_TO_API[kindTag],
 		baseUrl: `${resolveBaseUrl()}${SENTINEL_SEGMENT}${kindTag}`,
-		reasoning: pickerModel.capabilities.includes("thinking"),
+		reasoning: supportsReasoning(kindTag, profile) ?? registryModel?.reasoning ?? false,
 		thinkingLevelMap: registryModel?.thinkingLevelMap,
-		input: pickerModel.input_formats.includes("image") ? ["text", "image"] : ["text"],
-		cost: registryModel?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: pickerModel.context_window || (registryModel?.contextWindow ?? UNKNOWN_CONTEXT_WINDOW),
-		maxTokens: pickerModel.max_output_tokens ?? registryModel?.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+		input: (profile.vision ?? registryModel?.input.includes("image") ?? false) ? ["text", "image"] : ["text"],
+		cost: toCost(price, registryModel),
+		contextWindow: registryModel?.contextWindow ?? UNKNOWN_CONTEXT_WINDOW,
+		maxTokens: profile.maxTokensCeiling ?? registryModel?.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
 		compat:
 			registryModel?.compat ??
 			(kindTag === "openai_generic" ? { supportsDeveloperRole: false, maxTokensField: "max_tokens" as const } : undefined),
@@ -383,16 +413,17 @@ function credentialBearer(credential: Credential | undefined): string | null {
 function buildModelConfigs(catalog: ModelsPage, registry: Record<string, RegistryModel>) {
 	const modelConfigs = [];
 	const skipped: string[] = [];
-	for (const pickerModel of catalog.models) {
-		const kindTag = WIRE_FORMAT_TO_KIND[pickerModel.wire_format];
+	for (const record of catalog.models) {
+		const tags = Object.keys(record.kind);
+		const kindTag = tags.length === 1 && tags[0] in KIND_TO_API ? (tags[0] as SwitchboardKind) : undefined;
 		if (kindTag === undefined) {
-			skipped.push(pickerModel.id);
+			skipped.push(record.id);
 			continue;
 		}
-		modelConfigs.push(toModelConfig(pickerModel, kindTag, registry[pickerModel.id]));
+		modelConfigs.push(toModelConfig(record, kindTag, record.kind[kindTag], catalog.prices[record.id], registry[record.id]));
 	}
 	if (skipped.length > 0) {
-		console.error(`pi-switchboard: skipped model(s) with unrecognized wire format: ${skipped.join(", ")}`);
+		console.error(`pi-switchboard: skipped model(s) with an unsupported model kind: ${skipped.join(", ")}`);
 	}
 	return modelConfigs;
 }
