@@ -429,8 +429,12 @@ function buildModelConfigs(catalog: ModelsPage, registry: Record<string, Registr
 }
 
 function extensionVersion(): string {
-	const packagePath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
-	return (JSON.parse(readFileSync(packagePath, "utf8")) as { version: string }).version;
+	try {
+		const packagePath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+		return (JSON.parse(readFileSync(packagePath, "utf8")) as { version: string }).version;
+	} catch {
+		return "unknown";
+	}
 }
 
 export default async function (pi: ExtensionAPI) {
