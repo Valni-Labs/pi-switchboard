@@ -285,10 +285,15 @@ async function loadRegistryModels(): Promise<Record<string, RegistryModel>> {
 	const distDirectory = findPiAiDist();
 	const registry: Record<string, RegistryModel> = {};
 	for (const file of ["anthropic.models.js", "openai.models.js"]) {
-		const loaded = (await import(pathToFileURL(join(distDirectory, "providers", file)).href)) as Record<
-			string,
-			Record<string, RegistryModel>
-		>;
+		let loaded: Record<string, Record<string, RegistryModel>>;
+		try {
+			loaded = (await import(pathToFileURL(join(distDirectory, "providers", file)).href)) as Record<
+				string,
+				Record<string, RegistryModel>
+			>;
+		} catch {
+			continue;
+		}
 		for (const exported of Object.values(loaded)) {
 			if (exported === null || typeof exported !== "object") continue;
 			for (const model of Object.values(exported)) {
