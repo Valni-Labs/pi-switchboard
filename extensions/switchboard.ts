@@ -19,7 +19,6 @@ const SLOW_DOWN_EXTRA_SECONDS = 5;
 const INFERENCE_PATH = "/v1/switchboard/inference";
 const MODELS_PATH = "/v1/models";
 const SENTINEL_SEGMENT = "/pi-switchboard/";
-const MICRO_CENTS_PER_DOLLAR = 100_000_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 const UNKNOWN_CONTEXT_WINDOW = 0;
 const ERROR_DETAIL_LIMIT = 300;
@@ -34,28 +33,24 @@ const KIND_TO_API = {
 
 type SwitchboardKind = keyof typeof KIND_TO_API;
 
-interface NativeProfile {
-	model: string;
-	maxTokensCeiling?: number;
-	vision?: boolean;
-	thinking?: { modes: string[] };
-	reasoningEffort?: boolean | string[];
-}
+const WIRE_FORMAT_TO_KIND: Record<string, SwitchboardKind> = {
+	"anthropic-messages": "anthropic",
+	"openai-compat": "openai_generic",
+	"openai-responses": "openai_pro",
+};
 
-interface CatalogModel {
+interface PickerModel {
 	id: string;
-	kind: Partial<Record<SwitchboardKind, NativeProfile>>;
+	display_name: string;
+	context_window: number;
+	max_output_tokens: number | null;
+	input_formats: string[];
+	capabilities: string[];
+	wire_format: string;
 }
 
-interface CatalogPrice {
-	input_micro_cents_per_mtok: number;
-	output_micro_cents_per_mtok: number;
-	cached_input_micro_cents_per_mtok?: number;
-}
-
-interface CatalogPage {
-	models: CatalogModel[];
-	prices: Record<string, CatalogPrice>;
+interface ModelsPage {
+	models: PickerModel[];
 }
 
 interface SwitchboardErrorEnvelope {
@@ -285,10 +280,16 @@ async function loadRegistryModels(): Promise<Record<string, RegistryModel>> {
 	const distDirectory = findPiAiDist();
 	const registry: Record<string, RegistryModel> = {};
 	for (const file of ["anthropic.models.js", "openai.models.js"]) {
-		const loaded = (await import(pathToFileURL(join(distDirectory, "providers", file)).href)) as Record<
-			string,
-			Record<string, RegistryModel>
-		>;
+		let loaded: Record<string, Record<string, RegistryModel>>;
+		try {
+			loaded = (await import(pathToFileURL(join(distDirectory, "providers", file)).href)) as Record<
+				string,
+				Record<string, RegistryModel>
+			>;
+		} catch (error) {
+			if ((error as { code?: string }).code === "ERR_MODULE_NOT_FOUND") continue;
+			throw error;
+		}
 		for (const exported of Object.values(loaded)) {
 			if (exported === null || typeof exported !== "object") continue;
 			for (const model of Object.values(exported)) {
@@ -341,61 +342,25 @@ function installEnvelopeFetch(): void {
 	};
 }
 
-function profileKind(catalogModel: CatalogModel): { kindTag: SwitchboardKind; profile: NativeProfile } | null {
-	for (const kindTag of Object.keys(KIND_TO_API) as SwitchboardKind[]) {
-		const profile = catalogModel.kind[kindTag];
-		if (profile) return { kindTag, profile };
-	}
-	return null;
-}
-
-function profileSupportsReasoning(kindTag: SwitchboardKind, profile: NativeProfile): boolean {
-	if (kindTag === "anthropic") {
-		const modes = profile.thinking?.modes ?? [];
-		return modes.some(mode => mode !== "disabled");
-	}
-	if (Array.isArray(profile.reasoningEffort)) return profile.reasoningEffort.length > 0;
-	return profile.reasoningEffort === true;
-}
-
-function toCost(price: CatalogPrice | undefined, registryModel: RegistryModel | undefined) {
-	if (price) {
-		return {
-			input: price.input_micro_cents_per_mtok / MICRO_CENTS_PER_DOLLAR,
-			output: price.output_micro_cents_per_mtok / MICRO_CENTS_PER_DOLLAR,
-			cacheRead: (price.cached_input_micro_cents_per_mtok ?? 0) / MICRO_CENTS_PER_DOLLAR,
-			cacheWrite: 0,
-		};
-	}
-	if (registryModel) return registryModel.cost;
-	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-}
-
-function toModelConfig(
-	catalogModel: CatalogModel,
-	kindTag: SwitchboardKind,
-	profile: NativeProfile,
-	price: CatalogPrice | undefined,
-	registryModel: RegistryModel | undefined,
-) {
+function toModelConfig(pickerModel: PickerModel, kindTag: SwitchboardKind, registryModel: RegistryModel | undefined) {
 	return {
-		id: catalogModel.id,
-		name: registryModel?.name ?? catalogModel.id,
+		id: pickerModel.id,
+		name: pickerModel.display_name,
 		api: KIND_TO_API[kindTag],
 		baseUrl: `${resolveBaseUrl()}${SENTINEL_SEGMENT}${kindTag}`,
-		reasoning: profileSupportsReasoning(kindTag, profile),
+		reasoning: pickerModel.capabilities.includes("thinking"),
 		thinkingLevelMap: registryModel?.thinkingLevelMap,
-		input: profile.vision ? ["text", "image"] : (registryModel?.input ?? ["text"]),
-		cost: toCost(price, registryModel),
-		contextWindow: registryModel?.contextWindow ?? UNKNOWN_CONTEXT_WINDOW,
-		maxTokens: profile.maxTokensCeiling ?? registryModel?.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+		input: pickerModel.input_formats.includes("image") ? ["text", "image"] : ["text"],
+		cost: registryModel?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: pickerModel.context_window || (registryModel?.contextWindow ?? UNKNOWN_CONTEXT_WINDOW),
+		maxTokens: pickerModel.max_output_tokens ?? registryModel?.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
 		compat:
 			registryModel?.compat ??
 			(kindTag === "openai_generic" ? { supportsDeveloperRole: false, maxTokensField: "max_tokens" as const } : undefined),
 	};
 }
 
-async function discoverCatalog(baseUrl: string, bearer: string): Promise<CatalogPage> {
+async function discoverCatalog(baseUrl: string, bearer: string): Promise<ModelsPage> {
 	const response = await fetch(`${baseUrl}${MODELS_PATH}`, {
 		headers: { Authorization: `Bearer ${bearer}` },
 		signal: AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS),
@@ -403,7 +368,7 @@ async function discoverCatalog(baseUrl: string, bearer: string): Promise<Catalog
 	if (!response.ok) {
 		throw new Error(await describeFailure(response));
 	}
-	return (await response.json()) as CatalogPage;
+	return (await response.json()) as ModelsPage;
 }
 
 function credentialBearer(credential: Credential | undefined): string | null {
@@ -415,27 +380,19 @@ function credentialBearer(credential: Credential | undefined): string | null {
 	return credential.key ?? process.env.SWITCHBOARD_API_KEY ?? null;
 }
 
-function buildModelConfigs(catalog: CatalogPage, registry: Record<string, RegistryModel>) {
+function buildModelConfigs(catalog: ModelsPage, registry: Record<string, RegistryModel>) {
 	const modelConfigs = [];
 	const skipped: string[] = [];
-	for (const catalogModel of catalog.models) {
-		const resolved = profileKind(catalogModel);
-		if (!resolved) {
-			skipped.push(catalogModel.id);
+	for (const pickerModel of catalog.models) {
+		const kindTag = WIRE_FORMAT_TO_KIND[pickerModel.wire_format];
+		if (kindTag === undefined) {
+			skipped.push(pickerModel.id);
 			continue;
 		}
-		modelConfigs.push(
-			toModelConfig(
-				catalogModel,
-				resolved.kindTag,
-				resolved.profile,
-				catalog.prices[catalogModel.id],
-				registry[catalogModel.id],
-			),
-		);
+		modelConfigs.push(toModelConfig(pickerModel, kindTag, registry[pickerModel.id]));
 	}
 	if (skipped.length > 0) {
-		console.error(`pi-switchboard: skipped model(s) with no recognized kind: ${skipped.join(", ")}`);
+		console.error(`pi-switchboard: skipped model(s) with unrecognized wire format: ${skipped.join(", ")}`);
 	}
 	return modelConfigs;
 }
