@@ -286,8 +286,9 @@ async function loadRegistryModels(): Promise<Record<string, RegistryModel>> {
 				string,
 				Record<string, RegistryModel>
 			>;
-		} catch {
-			continue;
+		} catch (error) {
+			if ((error as { code?: string }).code === "ERR_MODULE_NOT_FOUND") continue;
+			throw error;
 		}
 		for (const exported of Object.values(loaded)) {
 			if (exported === null || typeof exported !== "object") continue;
