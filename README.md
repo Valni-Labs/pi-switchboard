@@ -14,7 +14,7 @@ Explore Switchboard at [valni.app/switchboard](https://valni.app/switchboard/). 
 
 **No keys to manage.** `/login` signs your device in from the browser. Credentials are short-lived and renew themselves, and you can revoke a device any time from the portal. Nothing to copy, nothing to paste, nothing to leak.
 
-**Every token metered.** Input, output, cache writes, cache reads, and reasoning, itemized at provider-exact rates with cached-prompt discounts included. You know what a session cost the moment it finishes.
+**Every token metered.** Input, output, cache writes, cache reads, and reasoning, itemized at provider-exact rates with cached-prompt discounts included. You know what a session costs the moment it finishes.
 
 **Spend stays where you set it.** Daily and monthly caps, rate limits, and model policy, enforced before a request runs. A runaway session stops at your ceiling, not at your card statement.
 
