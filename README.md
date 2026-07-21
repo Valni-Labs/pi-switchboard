@@ -10,7 +10,7 @@ Explore Switchboard at [valni.app/switchboard](https://valni.app/switchboard/). 
 
 ## How does Switchboard help?
 
-**Full native power, or we don't serve it.** You never get less from a model through Switchboard than you would going direct. Every model runs in its own native format, so streaming, tool calling, thinking, and prompt caching work at the model's full capability. Switching models is picking a different one from the list.
+**Full native power, or we don't serve it.** You never get less from a model through Switchboard than you would going direct. Supported models run in their native formats, so streaming, tool calling, thinking, and prompt caching work at the model's full capability. Switching models is picking a different one from the list.
 
 **No keys to manage.** `/login` signs your device in from the browser. Credentials are short-lived and renew themselves, and you can revoke a device any time from the portal. Nothing to copy, nothing to paste, nothing to leak.
 
