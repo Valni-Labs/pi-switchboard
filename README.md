@@ -41,7 +41,7 @@ pi
 > /model        # every catalog model, with prices
 ```
 
-`/login` runs a device sign-in: pi shows a short code and opens your browser on the Switchboard portal; you approve the device (signing in first if your browser session lapsed brings you right back to the approval), and pi picks it up within seconds. No keys to copy and nothing to configure; the device holds only short-lived credentials that renew themselves, and you can revoke it any time from the portal under Devices. Signed out, Switchboard shows no models at all; the moment you sign in, the catalog loads live from your account, so `/model` reflects your real-time configuration.
+`/login` opens your browser; approve the device and pi picks it up within seconds. No keys to copy, nothing to configure, and you can revoke the device any time from the portal. Once you're signed in, `/model` loads the catalog live from your account.
 
 To pin a release instead of tracking `main`: `pi install https://github.com/Valni-Labs/pi-switchboard@v0.3.4`. Update later with `pi update --extensions`, remove with `pi remove`.
 
@@ -61,11 +61,6 @@ Optional overrides: `SWITCHBOARD_BASE_URL` (inference, defaults to https://switc
 For a quick trial from a clone without installing: `pi -e ./extensions/switchboard.ts --provider switchboard --model <id> -p "Say hi"`.
 
 Tested against pi v0.80.x. The extension reads pi's bundled model registry for context windows and provider quirks, so a future pi release can move things; pin a tagged release if you want to update on your own schedule.
-
-## Model metadata
-
-- Per-token costs come from the Switchboard price sheet (`prices` in `/v1/models`), so pi's in-session cost display tracks what the ledger will bill. Cache-write pricing is not in the price sheet and displays as zero; billed truth is always `GET /v1/switchboard/usage`.
-- Context windows, display names, thinking-level maps, and provider quirks are copied from pi's built-in model registry when the Switchboard model id matches a known model (all Claude and GPT ids do). Unknown ids get a conservative default: context window unknown to pi, `max_tokens` field, `system` role instead of `developer` (some OpenAI-compatible providers reject `developer`).
 
 ## Errors
 
