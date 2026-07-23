@@ -4,7 +4,7 @@ import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Credential, Model, ModelsStoreEntry, OAuthCredentials, OAuthLoginCallbacks, RefreshModelsContext } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const PROVIDER_ID = "switchboard";
 const PROVIDER_NAME = "Switchboard";
@@ -18,6 +18,9 @@ const MILLISECONDS_PER_SECOND = 1000;
 const SLOW_DOWN_EXTRA_SECONDS = 5;
 const INFERENCE_PATH = "/v1/switchboard/inference";
 const MODELS_PATH = "/v1/models";
+const APPROVALS_PENDING_PATH = "/v1/switchboard/approvals/pending";
+const APPROVALS_BASE_PATH = "/v1/switchboard/approvals";
+const APPROVAL_POLL_INTERVAL_MS = 1_000;
 const SENTINEL_SEGMENT = "/pi-switchboard/";
 const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 const UNKNOWN_CONTEXT_WINDOW = 0;
@@ -220,6 +223,10 @@ function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string
 		case "SWB-1010":
 		case "SWB-1012":
 			return "This model is not enabled for this account. Switch models, or enable it in the portal.";
+		case "SWB-1301":
+			return "Company policy denied this tool call. Change the policy in the portal, or ask the agent for a different approach.";
+		case "SWB-1302":
+			return "This tool call needed your approval and did not get it in time. Run the request again and approve it when prompted.";
 		case "SWB-2005":
 		case "SWB-2006":
 		case "SWB-2007":
@@ -313,12 +320,152 @@ function isEnvelopeTarget(url: string): SwitchboardKind | null {
 	return kindTag in KIND_TO_API ? (kindTag as SwitchboardKind) : null;
 }
 
+interface PendingApproval {
+	id: string;
+	tool: string;
+	detail: string;
+	rule: string;
+	layer: string;
+}
+
+let plainFetch: typeof globalThis.fetch = globalThis.fetch.bind(globalThis);
+let sessionContext: ExtensionContext | null = null;
+let inFlightRequests = 0;
+let latestBearer: string | null = null;
+let approvalPollTimer: ReturnType<typeof setInterval> | null = null;
+let approvalPromptInProgress = false;
+const promptedApprovalIds = new Set<string>();
+
+async function postApprovalDecision(approvalId: string, bearer: string, decision: "allow" | "deny"): Promise<void> {
+	const response = await plainFetch(`${resolveBaseUrl()}${APPROVALS_BASE_PATH}/${encodeURIComponent(approvalId)}/decision`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json", Authorization: bearer },
+		body: JSON.stringify({ decision }),
+	});
+	const responseText = await response.text();
+	if (!response.ok) {
+		console.error(`pi-switchboard: approval decision POST failed with HTTP ${response.status}: ${responseText.slice(0, ERROR_DETAIL_LIMIT)}`);
+	}
+}
+
+async function promptForApproval(approval: PendingApproval, bearer: string): Promise<void> {
+	const context = sessionContext;
+	if (!context?.hasUI) return;
+	let decision: "allow" | "deny" = "deny";
+	try {
+		const approved = await context.ui.confirm(
+			"Switchboard approval required",
+			`The agent wants to run:\n\n${approval.tool}: ${approval.detail}\n\nPolicy rule: ${approval.rule} (${approval.layer} policy). Allow?`,
+		);
+		decision = approved ? "allow" : "deny";
+	} catch (error) {
+		console.error(`pi-switchboard: approval prompt failed; refusing ${approval.id}`, error);
+	}
+	try {
+		await postApprovalDecision(approval.id, bearer, decision);
+	} catch (error) {
+		console.error(`pi-switchboard: approval decision failed; the call will time out refused`, error);
+	}
+}
+
+async function pollPendingApprovals(): Promise<void> {
+	if (approvalPromptInProgress || latestBearer === null) return;
+	let endUserId: string;
+	try {
+		endUserId = resolveEndUserId();
+	} catch {
+		return;
+	}
+	let approvals: PendingApproval[];
+	try {
+		const response = await plainFetch(
+			`${resolveBaseUrl()}${APPROVALS_PENDING_PATH}?end_user_id=${encodeURIComponent(endUserId)}`,
+			{ headers: { Authorization: latestBearer } },
+		);
+		if (!response.ok) {
+			await response.text();
+			return;
+		}
+		approvals = ((await response.json()) as { approvals?: PendingApproval[] }).approvals ?? [];
+	} catch {
+		return;
+	}
+	const fresh = approvals.filter(approval => !promptedApprovalIds.has(approval.id));
+	if (fresh.length === 0) return;
+	approvalPromptInProgress = true;
+	try {
+		for (const approval of fresh) {
+			promptedApprovalIds.add(approval.id);
+			await promptForApproval(approval, latestBearer);
+		}
+	} finally {
+		approvalPromptInProgress = false;
+	}
+}
+
+function noteRequestStart(bearer: string | null): void {
+	inFlightRequests += 1;
+	latestBearer = bearer;
+	if (approvalPollTimer === null && sessionContext?.hasUI === true) {
+		approvalPollTimer = setInterval(() => {
+			void pollPendingApprovals();
+		}, APPROVAL_POLL_INTERVAL_MS);
+		approvalPollTimer.unref();
+	}
+}
+
+function noteRequestEnd(): void {
+	inFlightRequests = Math.max(0, inFlightRequests - 1);
+	if (inFlightRequests === 0 && approvalPollTimer !== null) {
+		clearInterval(approvalPollTimer);
+		approvalPollTimer = null;
+		promptedApprovalIds.clear();
+	}
+}
+
+function trackBodyCompletion(response: Response, onDone: () => void): Response {
+	if (response.body === null) {
+		onDone();
+		return response;
+	}
+	const [drain, body] = response.body.tee();
+	void (async () => {
+		try {
+			const reader = drain.getReader();
+			for (;;) {
+				const { done } = await reader.read();
+				if (done) break;
+			}
+		} catch {
+		} finally {
+			onDone();
+		}
+	})();
+	return new Response(body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers: response.headers,
+	});
+}
+
+function resetApprovalTracking(): void {
+	if (approvalPollTimer !== null) {
+		clearInterval(approvalPollTimer);
+		approvalPollTimer = null;
+	}
+	inFlightRequests = 0;
+	latestBearer = null;
+	approvalPromptInProgress = false;
+	promptedApprovalIds.clear();
+}
+
 let envelopeFetchInstalled = false;
 
 function installEnvelopeFetch(): void {
 	if (envelopeFetchInstalled) return;
 	envelopeFetchInstalled = true;
 	const baseFetch = globalThis.fetch.bind(globalThis);
+	plainFetch = baseFetch;
 	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
 		const url = input instanceof Request ? input.url : input.toString();
 		const kindTag = isEnvelopeTarget(url);
@@ -332,18 +479,26 @@ function installEnvelopeFetch(): void {
 			headers.set("Authorization", `Bearer ${anthropicStyleKey}`);
 			headers.delete("x-api-key");
 		}
-		const response = await baseFetch(`${resolveBaseUrl()}${INFERENCE_PATH}`, {
-			method: "POST",
-			headers,
-			body: JSON.stringify({
-				user_id: resolveEndUserId(),
-				time: new Date().toISOString(),
-				idempotency_key: crypto.randomUUID(),
-				kind: { [kindTag]: nativeBody },
-			}),
-			signal: request.signal,
-		});
-		if (response.ok) return response;
+		noteRequestStart(headers.get("Authorization"));
+		let response: Response;
+		try {
+			response = await baseFetch(`${resolveBaseUrl()}${INFERENCE_PATH}`, {
+				method: "POST",
+				headers,
+				body: JSON.stringify({
+					user_id: resolveEndUserId(),
+					time: new Date().toISOString(),
+					idempotency_key: crypto.randomUUID(),
+					kind: { [kindTag]: nativeBody },
+				}),
+				signal: request.signal,
+			});
+		} catch (error) {
+			noteRequestEnd();
+			throw error;
+		}
+		if (response.ok) return trackBodyCompletion(response, noteRequestEnd);
+		noteRequestEnd();
 		return translatedErrorResponse(kindTag, response);
 	};
 }
@@ -446,6 +601,13 @@ export default async function (pi: ExtensionAPI) {
 		? buildModelConfigs(await discoverCatalog(baseUrl, environmentKey), registry)
 		: [];
 	installEnvelopeFetch();
+	pi.on("session_start", (_event, context) => {
+		sessionContext = context;
+	});
+	pi.on("session_shutdown", () => {
+		sessionContext = null;
+		resetApprovalTracking();
+	});
 	pi.registerProvider(PROVIDER_ID, {
 		name: PROVIDER_NAME,
 		baseUrl,
