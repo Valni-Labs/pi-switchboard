@@ -342,8 +342,9 @@ async function postApprovalDecision(approvalId: string, bearer: string, decision
 		headers: { "Content-Type": "application/json", Authorization: bearer },
 		body: JSON.stringify({ decision }),
 	});
+	const responseText = await response.text();
 	if (!response.ok) {
-		console.error(`pi-switchboard: approval decision POST failed with HTTP ${response.status}`);
+		console.error(`pi-switchboard: approval decision POST failed with HTTP ${response.status}: ${responseText.slice(0, ERROR_DETAIL_LIMIT)}`);
 	}
 }
 
@@ -381,7 +382,10 @@ async function pollPendingApprovals(): Promise<void> {
 			`${resolveBaseUrl()}${APPROVALS_PENDING_PATH}?end_user_id=${encodeURIComponent(endUserId)}`,
 			{ headers: { Authorization: latestBearer } },
 		);
-		if (!response.ok) return;
+		if (!response.ok) {
+			await response.text();
+			return;
+		}
 		approvals = ((await response.json()) as { approvals?: PendingApproval[] }).approvals ?? [];
 	} catch {
 		return;
@@ -401,7 +405,7 @@ async function pollPendingApprovals(): Promise<void> {
 
 function noteRequestStart(bearer: string | null): void {
 	inFlightRequests += 1;
-	if (bearer !== null) latestBearer = bearer;
+	latestBearer = bearer;
 	if (approvalPollTimer === null && sessionContext?.hasUI === true) {
 		approvalPollTimer = setInterval(() => {
 			void pollPendingApprovals();
