@@ -4,7 +4,7 @@ import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Credential, Model, ModelsStoreEntry, OAuthCredentials, OAuthLoginCallbacks, RefreshModelsContext } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 
 const PROVIDER_ID = "switchboard";
 const PROVIDER_NAME = "Switchboard";
@@ -579,6 +579,92 @@ function extensionVersion(): string {
 	}
 }
 
+type Delivery = "steer" | "followUp";
+
+const DELIVERIES: Delivery[] = ["steer", "followUp"];
+
+const STEERING_RULES_FILE = join(".pi", "steering-rules.json");
+
+interface ToolSteeringRuleConfig {
+	tool: string;
+	match: string;
+	steer: string;
+	deliverAs?: Delivery;
+}
+
+interface SteeringRulesFile {
+	toolRules?: ToolSteeringRuleConfig[];
+}
+
+interface CompiledSteeringRule {
+	tool: string;
+	pattern: RegExp;
+	steer: string;
+	deliverAs?: Delivery;
+}
+
+function normalizeDelivery(value: unknown, context: ExtensionContext): Delivery | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value === "string" && (DELIVERIES as string[]).includes(value)) {
+		return value as Delivery;
+	}
+	if (context.hasUI) {
+		context.ui.notify(`Switchboard: ignoring invalid steering deliverAs "${String(value)}"`, "warning");
+	}
+	return undefined;
+}
+
+function steeringSubject(event: ToolResultEvent): string {
+	const input = event.input;
+	const command = input.command;
+	if (typeof command === "string") return command;
+	const path = input.path ?? input.file_path;
+	if (typeof path === "string") return path;
+	const url = input.url;
+	if (typeof url === "string") return url;
+	return JSON.stringify(input);
+}
+
+function loadSteeringRules(cwd: string, context: ExtensionContext): CompiledSteeringRule[] {
+	const rulesPath = join(cwd, STEERING_RULES_FILE);
+	if (!existsSync(rulesPath)) return [];
+
+	let parsed: SteeringRulesFile;
+	try {
+		parsed = JSON.parse(readFileSync(rulesPath, "utf-8")) as SteeringRulesFile;
+	} catch (error) {
+		if (context.hasUI) {
+			context.ui.notify(`Switchboard: unreadable ${STEERING_RULES_FILE}: ${String(error)}`, "error");
+		}
+		return [];
+	}
+
+	if (parsed.toolRules !== undefined && !Array.isArray(parsed.toolRules)) {
+		if (context.hasUI) {
+			context.ui.notify(`Switchboard: "toolRules" in ${STEERING_RULES_FILE} must be an array`, "error");
+		}
+		return [];
+	}
+
+	const compiled: CompiledSteeringRule[] = [];
+	for (const rule of parsed.toolRules ?? []) {
+		if (!rule.tool || !rule.match || !rule.steer) {
+			if (context.hasUI) {
+				context.ui.notify("Switchboard: skipping steering rule missing tool/match/steer", "warning");
+			}
+			continue;
+		}
+		try {
+			compiled.push({ tool: rule.tool, pattern: new RegExp(rule.match), steer: rule.steer, deliverAs: normalizeDelivery(rule.deliverAs, context) });
+		} catch (error) {
+			if (context.hasUI) {
+				context.ui.notify(`Switchboard: invalid steering pattern "${rule.match}": ${String(error)}`, "warning");
+			}
+		}
+	}
+	return compiled;
+}
+
 export default async function (pi: ExtensionAPI) {
 	console.error(`pi-switchboard v${extensionVersion()}`);
 	const baseUrl = resolveBaseUrl();
@@ -588,6 +674,26 @@ export default async function (pi: ExtensionAPI) {
 		? buildModelConfigs(await discoverCatalog(baseUrl, environmentKey), registry)
 		: [];
 	installEnvelopeFetch();
+	let steeringRules: CompiledSteeringRule[] = [];
+	pi.on("session_start", (_event, ctx) => {
+		steeringRules = loadSteeringRules(process.cwd(), ctx);
+		if (steeringRules.length > 0 && ctx.hasUI) {
+			ctx.ui.notify(`Switchboard: ${steeringRules.length} steering rule(s) active`, "info");
+		}
+	});
+	pi.on("tool_result", (event, ctx) => {
+		if (event.isError || steeringRules.length === 0) return;
+		const subject = steeringSubject(event);
+		for (const rule of steeringRules) {
+			if (rule.tool !== event.toolName) continue;
+			if (!rule.pattern.test(subject)) continue;
+			if (ctx.isIdle()) {
+				pi.sendUserMessage(rule.steer);
+			} else {
+				pi.sendUserMessage(rule.steer, { deliverAs: rule.deliverAs ?? "followUp" });
+			}
+		}
+	});
 	pi.on("tool_call", async (event, ctx) => {
 		const ask = pendingAsks.get(event.toolCallId);
 		if (ask === undefined) return;
