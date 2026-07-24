@@ -537,9 +537,9 @@ export default async function (pi: ExtensionAPI) {
 		const ask = pendingAsks.get(event.toolCallId);
 		if (ask === undefined) return;
 		pendingAsks.delete(event.toolCallId);
-		const policy = `Switchboard ${ask.layer} policy asks before ${ask.rule}`;
+		const policy = `Switchboard ${ask.layer} policy requires approval for ${ask.rule}`;
 		if (!ctx.hasUI) {
-			return { block: true, reason: `${policy}; no interactive prompt is available to approve it` };
+			return { block: true, reason: `${policy}; denied in a non-interactive session (no human to approve)` };
 		}
 		const approved = await ctx.ui.confirm(
 			APPROVAL_DIALOG_TITLE,
