@@ -302,23 +302,21 @@ async function translatedErrorResponse(kindTag: SwitchboardKind, response: Respo
 }
 
 function describeNetworkFailure(error: unknown): string {
-	let host = PROVIDER_NAME;
+	let location = "";
 	try {
-		host = new URL(resolveBaseUrl()).host;
+		const host = new URL(resolveBaseUrl()).host;
+		if (host) location = ` at ${host}`;
 	} catch {
 	}
 	if (error instanceof Error && error.name === "TimeoutError") {
-		return `Switchboard at ${host} took too long to respond. Check your connection and try again.`;
+		return `Can't reach Switchboard${location}: it took too long to respond. Check your connection and try again.`;
 	}
 	const cause = (error as { cause?: { code?: string } }).cause;
 	const code = cause?.code ?? (error as { code?: string }).code;
-	if (code === "ENOTFOUND" || code === "EAI_AGAIN") {
-		return `Can't reach Switchboard at ${host}. Check your internet connection and try again.`;
-	}
 	if (code === "ECONNREFUSED") {
-		return `Switchboard is not responding at ${host}. It may be down. Try again in a moment.`;
+		return `Can't reach Switchboard${location}: the connection was refused. It may be down. Try again in a moment.`;
 	}
-	return `Couldn't reach Switchboard at ${host}. Check your internet connection and try again.`;
+	return `Can't reach Switchboard${location}. Check your internet connection and try again.`;
 }
 
 function findPiAiDist(): string {
