@@ -367,29 +367,28 @@ function recordAskMarkerLine(line: string): void {
 
 function scanStreamForAsks(response: Response): Response {
 	if (response.body === null) return response;
-	const [drain, forward] = response.body.tee();
-	void (async () => {
-		const reader = drain.getReader();
-		const decoder = new TextDecoder();
-		let buffer = "";
-		try {
-			for (;;) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				buffer += decoder.decode(value, { stream: true });
-				let newlineIndex = buffer.indexOf("\n");
-				while (newlineIndex !== -1) {
-					recordAskMarkerLine(buffer.slice(0, newlineIndex));
-					buffer = buffer.slice(newlineIndex + 1);
-					newlineIndex = buffer.indexOf("\n");
-				}
+	const decoder = new TextDecoder();
+	let buffer = "";
+	const scanner = new TransformStream<Uint8Array, Uint8Array>({
+		transform(chunk, controller) {
+			controller.enqueue(chunk);
+			buffer += decoder.decode(chunk, { stream: true });
+			let newlineIndex = buffer.indexOf("\n");
+			while (newlineIndex !== -1) {
+				recordAskMarkerLine(buffer.slice(0, newlineIndex));
+				buffer = buffer.slice(newlineIndex + 1);
+				newlineIndex = buffer.indexOf("\n");
 			}
+		},
+		flush() {
 			recordAskMarkerLine(buffer);
-		} catch (error) {
-			console.error("pi-switchboard: tool-ask stream scan failed", error);
-		}
-	})();
-	return new Response(forward, { status: response.status, statusText: response.statusText, headers: response.headers });
+		},
+	});
+	return new Response(response.body.pipeThrough(scanner), {
+		status: response.status,
+		statusText: response.statusText,
+		headers: response.headers,
+	});
 }
 
 function captureAskTags(response: Response): Response {
