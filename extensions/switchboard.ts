@@ -25,6 +25,10 @@ const ERROR_DETAIL_LIMIT = 300;
 const CATALOG_FETCH_TIMEOUT_MS = 10_000;
 const MICRO_CENTS_PER_DOLLAR = 100_000_000;
 const PORTAL_URL = "https://valni.app/platform";
+const TOOL_ASK_HEADER = "X-Switchboard-Tool-Ask";
+const TOOL_ASK_STREAM_MARKER = ":switchboard.tool_ask ";
+const EVENT_STREAM_CONTENT_TYPE = "text/event-stream";
+const APPROVAL_DIALOG_TITLE = "Switchboard approval required";
 
 const KIND_TO_API = {
 	anthropic: "anthropic-messages",
@@ -315,6 +319,86 @@ function isEnvelopeTarget(url: string): SwitchboardKind | null {
 	return kindTag in KIND_TO_API ? (kindTag as SwitchboardKind) : null;
 }
 
+interface AskTag {
+	tool: string;
+	rule: string;
+	layer: string;
+}
+
+interface AskEntry {
+	id?: string;
+	tool: string;
+	rule: string;
+	layer: string;
+}
+
+const pendingAsks = new Map<string, AskTag>();
+
+function recordAskEntries(entries: AskEntry[]): void {
+	for (const entry of entries) {
+		if (typeof entry.id !== "string") {
+			console.error("pi-switchboard: ignoring a tool-ask tag without a tool-call id; cannot correlate it to a tool call");
+			continue;
+		}
+		pendingAsks.set(entry.id, { tool: entry.tool, rule: entry.rule, layer: entry.layer });
+	}
+}
+
+function recordAskHeader(response: Response): void {
+	const header = response.headers.get(TOOL_ASK_HEADER);
+	if (header === null) return;
+	try {
+		const entries = JSON.parse(Buffer.from(header, "base64").toString("utf8")) as AskEntry[];
+		if (Array.isArray(entries)) recordAskEntries(entries);
+	} catch (error) {
+		console.error("pi-switchboard: failed to parse the tool-ask header", error);
+	}
+}
+
+function recordAskMarkerLine(line: string): void {
+	if (!line.startsWith(TOOL_ASK_STREAM_MARKER)) return;
+	try {
+		const parsed = JSON.parse(line.slice(TOOL_ASK_STREAM_MARKER.length).trim()) as { asks?: AskEntry[] };
+		if (Array.isArray(parsed.asks)) recordAskEntries(parsed.asks);
+	} catch (error) {
+		console.error("pi-switchboard: failed to parse a tool-ask stream marker", error);
+	}
+}
+
+function scanStreamForAsks(response: Response): Response {
+	if (response.body === null) return response;
+	const decoder = new TextDecoder();
+	let buffer = "";
+	const scanner = new TransformStream<Uint8Array, Uint8Array>({
+		transform(chunk, controller) {
+			controller.enqueue(chunk);
+			buffer += decoder.decode(chunk, { stream: true });
+			let newlineIndex = buffer.indexOf("\n");
+			while (newlineIndex !== -1) {
+				recordAskMarkerLine(buffer.slice(0, newlineIndex));
+				buffer = buffer.slice(newlineIndex + 1);
+				newlineIndex = buffer.indexOf("\n");
+			}
+		},
+		flush() {
+			recordAskMarkerLine(buffer);
+		},
+	});
+	return new Response(response.body.pipeThrough(scanner), {
+		status: response.status,
+		statusText: response.statusText,
+		headers: response.headers,
+	});
+}
+
+function captureAskTags(response: Response): Response {
+	recordAskHeader(response);
+	if ((response.headers.get("content-type") ?? "").includes(EVENT_STREAM_CONTENT_TYPE)) {
+		return scanStreamForAsks(response);
+	}
+	return response;
+}
+
 let envelopeFetchInstalled = false;
 
 function installEnvelopeFetch(): void {
@@ -345,7 +429,7 @@ function installEnvelopeFetch(): void {
 			}),
 			signal: request.signal,
 		});
-		if (response.ok) return response;
+		if (response.ok) return captureAskTags(response);
 		return translatedErrorResponse(kindTag, response);
 	};
 }
@@ -448,6 +532,24 @@ export default async function (pi: ExtensionAPI) {
 		? buildModelConfigs(await discoverCatalog(baseUrl, environmentKey), registry)
 		: [];
 	installEnvelopeFetch();
+	pi.on("tool_call", async (event, ctx) => {
+		const ask = pendingAsks.get(event.toolCallId);
+		if (ask === undefined) return;
+		pendingAsks.delete(event.toolCallId);
+		const policy = `Switchboard ${ask.layer} policy requires approval for ${ask.rule}`;
+		if (!ctx.hasUI) {
+			return { block: true, reason: `${policy}; denied in a non-interactive session (no human to approve)` };
+		}
+		const approved = await ctx.ui.confirm(
+			APPROVAL_DIALOG_TITLE,
+			`The agent wants to run ${event.toolName}.\n\n${policy}. Allow this call?`,
+		);
+		if (!approved) return { block: true, reason: `Declined: ${policy}` };
+		return;
+	});
+	pi.on("session_shutdown", () => {
+		pendingAsks.clear();
+	});
 	pi.registerProvider(PROVIDER_ID, {
 		name: PROVIDER_NAME,
 		baseUrl,
