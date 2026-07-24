@@ -4,6 +4,8 @@ import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-
 
 type Delivery = "steer" | "followUp";
 
+const DELIVERIES: Delivery[] = ["steer", "followUp"];
+
 interface ToolSteeringRuleConfig {
 	tool: string;
 	match: string;
@@ -23,6 +25,17 @@ interface CompiledRule {
 }
 
 const RULES_FILENAME = join(".pi", "steering-rules.json");
+
+function normalizeDelivery(value: unknown, context: ExtensionContext): Delivery | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value === "string" && (DELIVERIES as string[]).includes(value)) {
+		return value as Delivery;
+	}
+	if (context.hasUI) {
+		context.ui.notify(`event-steering: ignoring invalid deliverAs "${String(value)}"`, "warning");
+	}
+	return undefined;
+}
 
 function subjectFor(event: ToolResultEvent): string {
 	const input = event.input;
@@ -49,6 +62,13 @@ function loadRules(cwd: string, context: ExtensionContext): CompiledRule[] {
 		return [];
 	}
 
+	if (parsed.toolRules !== undefined && !Array.isArray(parsed.toolRules)) {
+		if (context.hasUI) {
+			context.ui.notify(`event-steering: "toolRules" in ${RULES_FILENAME} must be an array`, "error");
+		}
+		return [];
+	}
+
 	const compiled: CompiledRule[] = [];
 	for (const rule of parsed.toolRules ?? []) {
 		if (!rule.tool || !rule.match || !rule.steer) {
@@ -58,7 +78,7 @@ function loadRules(cwd: string, context: ExtensionContext): CompiledRule[] {
 			continue;
 		}
 		try {
-			compiled.push({ tool: rule.tool, pattern: new RegExp(rule.match), steer: rule.steer, deliverAs: rule.deliverAs });
+			compiled.push({ tool: rule.tool, pattern: new RegExp(rule.match), steer: rule.steer, deliverAs: normalizeDelivery(rule.deliverAs, context) });
 		} catch (error) {
 			if (context.hasUI) {
 				context.ui.notify(`event-steering: invalid pattern "${rule.match}": ${String(error)}`, "warning");
