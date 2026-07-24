@@ -10,14 +10,35 @@ interface LocalOverride {
 	authBaseUrl?: string;
 }
 
+function readOverrideUrl(source: Record<string, unknown>, key: string): string | undefined {
+	const value = source[key];
+	if (value === undefined) return undefined;
+	if (typeof value === "string" && value.length > 0) return value;
+	console.error(`pi-switchboard: ignoring "${key}" in switchboard.local.json (must be a non-empty string)`);
+	return undefined;
+}
+
 function loadLocalOverride(): LocalOverride {
+	const path = join(dirname(fileURLToPath(import.meta.url)), "switchboard.local.json");
+	if (!existsSync(path)) return {};
+
+	let parsed: unknown;
 	try {
-		const path = join(dirname(fileURLToPath(import.meta.url)), "switchboard.local.json");
-		if (!existsSync(path)) return {};
-		return JSON.parse(readFileSync(path, "utf8")) as LocalOverride;
-	} catch {
+		parsed = JSON.parse(readFileSync(path, "utf8"));
+	} catch (error) {
+		console.error(`pi-switchboard: ignoring switchboard.local.json (${String(error)})`);
 		return {};
 	}
+	if (parsed === null || typeof parsed !== "object") {
+		console.error("pi-switchboard: ignoring switchboard.local.json (expected a JSON object)");
+		return {};
+	}
+
+	const source = parsed as Record<string, unknown>;
+	return {
+		baseUrl: readOverrideUrl(source, "baseUrl"),
+		authBaseUrl: readOverrideUrl(source, "authBaseUrl"),
+	};
 }
 
 const localOverride = loadLocalOverride();
