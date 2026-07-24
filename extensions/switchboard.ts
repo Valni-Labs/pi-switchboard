@@ -229,11 +229,20 @@ function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string
 		case "SWB-2005":
 		case "SWB-2006":
 		case "SWB-2007":
-		case "SWB-2008":
 			return "Your end user id is not registered on this account. Fix the end user id or register it in the portal, then restart pi.";
+		case "SWB-2008":
+			return `This end user is disabled on the account. Re-enable it at ${PORTAL_URL} to continue.`;
 		case "SWB-3001":
 		case "SWB-3005":
 			return "This model is no longer available in the catalog. Pick a different model.";
+		case "SWB-5002":
+		case "SWB-5003":
+		case "SWB-5101":
+		case "SWB-5102":
+		case "SWB-5103":
+		case "SWB-5108":
+		case "SWB-5202":
+			return "This model is not available on Switchboard right now. Pick a different model, and report the reference if it keeps happening.";
 	}
 	if (envelope.fault === "provider") {
 		return "The model provider is having trouble. Retry shortly, or switch to a different model.";
@@ -249,30 +258,65 @@ function userFacingMessage(envelope: SwitchboardErrorEnvelope & { code: string; 
 	return `${switchboardGuidance(envelope)} [${reference}]`;
 }
 
+function unexpectedResponseMessage(response: Response, text: string): string {
+	console.error(`pi-switchboard: unexpected Switchboard response (HTTP ${response.status}): ${text.slice(0, ERROR_DETAIL_LIMIT)}`);
+	return `Switchboard returned an unexpected response (HTTP ${response.status}). Retry shortly, and report it if it keeps happening.`;
+}
+
 async function describeFailure(response: Response): Promise<string> {
 	const text = await response.text();
 	let envelope: SwitchboardErrorEnvelope;
 	try {
 		envelope = JSON.parse(text) as SwitchboardErrorEnvelope;
 	} catch {
-		return `Switchboard HTTP ${response.status}: ${text.slice(0, ERROR_DETAIL_LIMIT)}`;
+		return unexpectedResponseMessage(response, text);
 	}
 	if (!envelope.code || !envelope.error) {
-		return `Switchboard HTTP ${response.status}: ${text.slice(0, ERROR_DETAIL_LIMIT)}`;
+		return unexpectedResponseMessage(response, text);
 	}
 	return userFacingMessage({ ...envelope, code: envelope.code, error: envelope.error }, response.status);
 }
 
-async function translatedErrorResponse(kindTag: SwitchboardKind, response: Response): Promise<Response> {
-	const message = await describeFailure(response);
-	const body =
+function isAbortError(error: unknown): boolean {
+	return error instanceof Error && error.name === "AbortError";
+}
+
+function singleLine(message: string): string {
+	return message.replace(/\s+/g, " ").trim();
+}
+
+function streamErrorResponse(kindTag: SwitchboardKind, message: string): Response {
+	const clean = singleLine(message);
+	const stream =
 		kindTag === "anthropic"
-			? { type: "error", error: { type: "api_error", message } }
-			: { error: { message, type: "api_error", param: null, code: null } };
-	return new Response(JSON.stringify(body), {
-		status: response.status,
-		headers: { "Content-Type": "application/json" },
+			? `event: error\ndata: ${clean}\n\n`
+			: `data: ${JSON.stringify({ error: { message: clean, type: "api_error" } })}\n\n`;
+	return new Response(stream, {
+		status: 200,
+		headers: { "Content-Type": EVENT_STREAM_CONTENT_TYPE },
 	});
+}
+
+async function translatedErrorResponse(kindTag: SwitchboardKind, response: Response): Promise<Response> {
+	return streamErrorResponse(kindTag, await describeFailure(response));
+}
+
+function describeNetworkFailure(error: unknown): string {
+	let location = "";
+	try {
+		const host = new URL(resolveBaseUrl()).host;
+		if (host) location = ` at ${host}`;
+	} catch {
+	}
+	if (error instanceof Error && error.name === "TimeoutError") {
+		return `Can't reach Switchboard${location}: it took too long to respond. Check your connection and try again.`;
+	}
+	const cause = (error as { cause?: { code?: string } }).cause;
+	const code = cause?.code ?? (error as { code?: string }).code;
+	if (code === "ECONNREFUSED") {
+		return `Can't reach Switchboard${location}: the connection was refused. It may be down. Try again in a moment.`;
+	}
+	return `Can't reach Switchboard${location}. Check your internet connection and try again.`;
 }
 
 function findPiAiDist(): string {
@@ -418,17 +462,23 @@ function installEnvelopeFetch(): void {
 			headers.set("Authorization", `Bearer ${anthropicStyleKey}`);
 			headers.delete("x-api-key");
 		}
-		const response = await baseFetch(`${resolveBaseUrl()}${INFERENCE_PATH}`, {
-			method: "POST",
-			headers,
-			body: JSON.stringify({
-				user_id: resolveEndUserId(),
-				time: new Date().toISOString(),
-				idempotency_key: crypto.randomUUID(),
-				kind: { [kindTag]: nativeBody },
-			}),
-			signal: request.signal,
-		});
+		let response: Response;
+		try {
+			response = await baseFetch(`${resolveBaseUrl()}${INFERENCE_PATH}`, {
+				method: "POST",
+				headers,
+				body: JSON.stringify({
+					user_id: resolveEndUserId(),
+					time: new Date().toISOString(),
+					idempotency_key: crypto.randomUUID(),
+					kind: { [kindTag]: nativeBody },
+				}),
+				signal: request.signal,
+			});
+		} catch (error) {
+			if (isAbortError(error)) throw error;
+			return streamErrorResponse(kindTag, describeNetworkFailure(error));
+		}
 		if (response.ok) return captureAskTags(response);
 		return translatedErrorResponse(kindTag, response);
 	};
@@ -477,12 +527,18 @@ function toModelConfig(
 }
 
 async function discoverCatalog(baseUrl: string, bearer: string): Promise<ModelsPage> {
-	const response = await fetch(`${baseUrl}${MODELS_PATH}`, {
-		headers: { Authorization: `Bearer ${bearer}` },
-		signal: AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS),
-	});
+	let response: Response;
+	try {
+		response = await fetch(`${baseUrl}${MODELS_PATH}`, {
+			headers: { Authorization: `Bearer ${bearer}` },
+			signal: AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS),
+		});
+	} catch (error) {
+		if (isAbortError(error)) throw error;
+		throw new Error(describeNetworkFailure(error));
+	}
 	if (!response.ok) {
-		throw new Error(await describeFailure(response));
+		throw new Error(singleLine(await describeFailure(response)));
 	}
 	return (await response.json()) as ModelsPage;
 }
