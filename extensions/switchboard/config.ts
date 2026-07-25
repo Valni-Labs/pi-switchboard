@@ -45,6 +45,8 @@ const localOverride = loadLocalOverride();
 
 let sessionEndUserId: string | null = null;
 
+let sessionId: string | null = null;
+
 export function resolveBaseUrl(): string {
 	return process.env.SWITCHBOARD_BASE_URL ?? localOverride.baseUrl ?? DEFAULT_BASE_URL;
 }
@@ -55,6 +57,14 @@ export function resolveAuthBaseUrl(): string {
 
 export function setSessionEndUserId(id: string): void {
 	sessionEndUserId = id;
+}
+
+export function setSessionId(id: string): void {
+	sessionId = id.length > 0 ? id : null;
+}
+
+export function resolveSessionId(): string | null {
+	return sessionId;
 }
 
 export function resolveEndUserId(): string {

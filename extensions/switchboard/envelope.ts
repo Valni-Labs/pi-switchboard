@@ -1,9 +1,10 @@
 import { EVENT_STREAM_CONTENT_TYPE, SENTINEL_SEGMENT } from "./constants.ts";
-import { resolveBaseUrl, resolveEndUserId } from "./config.ts";
+import { resolveBaseUrl, resolveEndUserId, resolveSessionId } from "./config.ts";
 import { describeNetworkFailure, isAbortError, streamErrorResponse, translatedErrorResponse } from "./errors.ts";
 import { KIND_TO_API, type SwitchboardKind } from "./types.ts";
 
 const INFERENCE_PATH = "/v1/switchboard/inference";
+const SESSION_HEADER = "X-Switchboard-Session";
 const TOOL_ASK_HEADER = "X-Switchboard-Tool-Ask";
 const TOOL_ASK_STREAM_MARKER = ":switchboard.tool_ask ";
 
@@ -123,6 +124,8 @@ export function installEnvelopeFetch(): void {
 			headers.set("Authorization", `Bearer ${anthropicStyleKey}`);
 			headers.delete("x-api-key");
 		}
+		const sessionId = resolveSessionId();
+		if (sessionId !== null) headers.set(SESSION_HEADER, sessionId);
 		let response: Response;
 		try {
 			response = await baseFetch(`${resolveBaseUrl()}${INFERENCE_PATH}`, {
