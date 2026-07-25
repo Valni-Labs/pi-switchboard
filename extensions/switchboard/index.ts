@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { ModelsStoreEntry, OAuthCredentials, RefreshModelsContext } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { buildModelConfigs, credentialBearer, discoverCatalog, loadRegistryModels } from "./catalog.ts";
-import { resolveBaseUrl, setSessionEndUserId } from "./config.ts";
+import { resolveBaseUrl, setSessionEndUserId, setSessionId } from "./config.ts";
 import { MILLISECONDS_PER_SECOND } from "./constants.ts";
 import { deviceLogin, deviceRefresh } from "./device-auth.ts";
 import { clearPendingAsks, consumePendingAsk, installEnvelopeFetch } from "./envelope.ts";
@@ -34,6 +34,7 @@ export default async function (pi: ExtensionAPI) {
 	installEnvelopeFetch();
 	let steeringRules: CompiledSteeringRule[] = [];
 	pi.on("session_start", (_event, ctx) => {
+		setSessionId(ctx.sessionManager.getSessionId());
 		steeringRules = loadSteeringRules(process.cwd(), ctx);
 		if (steeringRules.length > 0 && ctx.hasUI) {
 			ctx.ui.notify(`Switchboard: ${steeringRules.length} steering rule(s) active`, "info");
