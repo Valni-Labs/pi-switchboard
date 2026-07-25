@@ -7,6 +7,49 @@ const INFERENCE_PATH = "/v1/switchboard/inference";
 const SESSION_HEADER = "X-Switchboard-Session";
 const TOOL_ASK_HEADER = "X-Switchboard-Tool-Ask";
 const TOOL_ASK_STREAM_MARKER = ":switchboard.tool_ask ";
+const STEER_HEADER = "X-Switchboard-Steer";
+const STEER_STREAM_MARKER = ":switchboard.steer ";
+
+export type SteerDelivery = "steer" | "followUp";
+
+export type SteerSink = (steer: string, deliverAs: SteerDelivery) => void;
+
+let steerSink: SteerSink | null = null;
+
+export function onSteer(sink: SteerSink): void {
+	steerSink = sink;
+}
+
+function deliverSteers(entries: unknown): void {
+	if (!Array.isArray(entries)) return;
+	for (const entry of entries) {
+		if (entry === null || typeof entry !== "object") continue;
+		const steer = (entry as { steer?: unknown }).steer;
+		if (typeof steer !== "string" || steer.length === 0) continue;
+		const deliverAs = (entry as { deliverAs?: unknown }).deliverAs === "steer" ? "steer" : "followUp";
+		steerSink?.(steer, deliverAs);
+	}
+}
+
+function recordSteerHeader(response: Response): void {
+	const header = response.headers.get(STEER_HEADER);
+	if (header === null) return;
+	try {
+		deliverSteers(JSON.parse(Buffer.from(header, "base64").toString("utf8")));
+	} catch (error) {
+		console.error("pi-switchboard: failed to parse the steer header", error);
+	}
+}
+
+function recordSteerMarkerLine(line: string): void {
+	if (!line.startsWith(STEER_STREAM_MARKER)) return;
+	try {
+		const parsed = JSON.parse(line.slice(STEER_STREAM_MARKER.length).trim()) as { steers?: unknown };
+		deliverSteers(parsed.steers);
+	} catch (error) {
+		console.error("pi-switchboard: failed to parse a steer stream marker", error);
+	}
+}
 
 export interface AskTag {
 	tool: string;
@@ -64,7 +107,12 @@ function recordAskMarkerLine(line: string): void {
 	}
 }
 
-function scanStreamForAsks(response: Response): Response {
+function scanMarkerLine(line: string): void {
+	recordAskMarkerLine(line);
+	recordSteerMarkerLine(line);
+}
+
+function scanResponseStream(response: Response): Response {
 	if (response.body === null) return response;
 	const decoder = new TextDecoder();
 	let buffer = "";
@@ -74,13 +122,13 @@ function scanStreamForAsks(response: Response): Response {
 			buffer += decoder.decode(chunk, { stream: true });
 			let newlineIndex = buffer.indexOf("\n");
 			while (newlineIndex !== -1) {
-				recordAskMarkerLine(buffer.slice(0, newlineIndex));
+				scanMarkerLine(buffer.slice(0, newlineIndex));
 				buffer = buffer.slice(newlineIndex + 1);
 				newlineIndex = buffer.indexOf("\n");
 			}
 		},
 		flush() {
-			recordAskMarkerLine(buffer);
+			scanMarkerLine(buffer);
 		},
 	});
 	return new Response(response.body.pipeThrough(scanner), {
@@ -90,10 +138,11 @@ function scanStreamForAsks(response: Response): Response {
 	});
 }
 
-function captureAskTags(response: Response): Response {
+function captureResponseSignals(response: Response): Response {
 	recordAskHeader(response);
+	recordSteerHeader(response);
 	if ((response.headers.get("content-type") ?? "").includes(EVENT_STREAM_CONTENT_TYPE)) {
-		return scanStreamForAsks(response);
+		return scanResponseStream(response);
 	}
 	return response;
 }
@@ -143,7 +192,7 @@ export function installEnvelopeFetch(): void {
 			if (isAbortError(error)) throw error;
 			return streamErrorResponse(kindTag, describeNetworkFailure(error));
 		}
-		if (response.ok) return captureAskTags(response);
+		if (response.ok) return captureResponseSignals(response);
 		return translatedErrorResponse(kindTag, response);
 	};
 }
