@@ -128,6 +128,7 @@ function scanResponseStream(response: Response): Response {
 			}
 		},
 		flush() {
+			buffer += decoder.decode();
 			scanMarkerLine(buffer);
 		},
 	});
