@@ -4,10 +4,12 @@ import { fileURLToPath } from "node:url";
 import type { ModelsStoreEntry, OAuthCredentials, RefreshModelsContext } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { buildModelConfigs, credentialBearer, discoverCatalog, loadRegistryModels } from "./catalog.ts";
-import { resolveBaseUrl, setSessionEndUserId, setSessionId } from "./config.ts";
+import { clearSessionAccessToken, resolveBaseUrl, setSessionAccessToken, setSessionEndUserId, setSessionId } from "./config.ts";
 import { MILLISECONDS_PER_SECOND } from "./constants.ts";
 import { deviceLogin, deviceRefresh } from "./device-auth.ts";
 import { clearPendingAsks, consumePendingAsk, installEnvelopeFetch, onSteer } from "./envelope.ts";
+import { discoverTools } from "./toolProxy.ts";
+import { registerServerTools } from "./tools.ts";
 
 const PROVIDER_ID = "switchboard";
 const PROVIDER_NAME = "Switchboard";
@@ -53,6 +55,7 @@ export default async function (pi: ExtensionAPI) {
 	});
 	pi.on("session_shutdown", () => {
 		clearPendingAsks();
+		clearSessionAccessToken();
 	});
 	pi.registerProvider(PROVIDER_ID, {
 		name: PROVIDER_NAME,
@@ -64,6 +67,7 @@ export default async function (pi: ExtensionAPI) {
 			refreshToken: deviceRefresh,
 			getApiKey: (credentials: OAuthCredentials) => {
 				if (typeof credentials.endUserId === "string") setSessionEndUserId(credentials.endUserId);
+				setSessionAccessToken(credentials.access);
 				return credentials.access;
 			},
 		},
@@ -72,6 +76,7 @@ export default async function (pi: ExtensionAPI) {
 			const bearer = credentialBearer(context.credential);
 			if (!bearer) {
 				await context.store.delete();
+				clearSessionAccessToken();
 				return [];
 			}
 			const stored = await context.store.read();
@@ -84,6 +89,15 @@ export default async function (pi: ExtensionAPI) {
 				models: configs as unknown as ModelsStoreEntry["models"],
 				checkedAt: Math.floor(Date.now() / MILLISECONDS_PER_SECOND),
 			});
+			if (context.credential?.type === "oauth") {
+				try {
+					registerServerTools(pi, await discoverTools(baseUrl, bearer));
+				} catch (error) {
+					console.error("pi-switchboard: server tool discovery failed", error);
+				}
+			} else {
+				clearSessionAccessToken();
+			}
 			return configs;
 		},
 	});

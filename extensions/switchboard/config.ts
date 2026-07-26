@@ -67,6 +67,20 @@ export function resolveSessionId(): string | null {
 	return sessionId;
 }
 
+let sessionAccessToken: string | null = null;
+
+export function setSessionAccessToken(token: string): void {
+	sessionAccessToken = token.length > 0 ? token : null;
+}
+
+export function resolveAccessToken(): string | null {
+	return sessionAccessToken;
+}
+
+export function clearSessionAccessToken(): void {
+	sessionAccessToken = null;
+}
+
 export function resolveEndUserId(): string {
 	const fromSession = sessionEndUserId ?? process.env.SWITCHBOARD_END_USER_ID;
 	if (!fromSession) {
