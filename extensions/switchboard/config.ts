@@ -4,10 +4,12 @@ import { fileURLToPath } from "node:url";
 
 const DEFAULT_BASE_URL = "https://switchboard.valni.app";
 const DEFAULT_AUTH_BASE_URL = "https://api.valni.app";
+const DEFAULT_RUNNER_BASE_URL = "https://runner.valni.app";
 
 interface LocalOverride {
 	baseUrl?: string;
 	authBaseUrl?: string;
+	runnerBaseUrl?: string;
 }
 
 function readOverrideUrl(source: Record<string, unknown>, key: string): string | undefined {
@@ -38,6 +40,7 @@ function loadLocalOverride(): LocalOverride {
 	return {
 		baseUrl: readOverrideUrl(source, "baseUrl"),
 		authBaseUrl: readOverrideUrl(source, "authBaseUrl"),
+		runnerBaseUrl: readOverrideUrl(source, "runnerBaseUrl"),
 	};
 }
 
@@ -47,6 +50,8 @@ let sessionEndUserId: string | null = null;
 
 let sessionId: string | null = null;
 
+let sessionAccessToken: string | null = null;
+
 export function resolveBaseUrl(): string {
 	return process.env.SWITCHBOARD_BASE_URL ?? localOverride.baseUrl ?? DEFAULT_BASE_URL;
 }
@@ -55,8 +60,20 @@ export function resolveAuthBaseUrl(): string {
 	return process.env.SWITCHBOARD_AUTH_BASE_URL ?? localOverride.authBaseUrl ?? DEFAULT_AUTH_BASE_URL;
 }
 
+export function resolveRunnerBaseUrl(): string {
+	return process.env.SWITCHBOARD_RUNNER_BASE_URL ?? localOverride.runnerBaseUrl ?? DEFAULT_RUNNER_BASE_URL;
+}
+
 export function setSessionEndUserId(id: string): void {
 	sessionEndUserId = id;
+}
+
+export function setSessionAccessToken(token: string): void {
+	sessionAccessToken = token.length > 0 ? token : null;
+}
+
+export function resolveAccessToken(): string | null {
+	return sessionAccessToken;
 }
 
 export function setSessionId(id: string): void {
