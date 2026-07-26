@@ -7,8 +7,7 @@ import { buildModelConfigs, credentialBearer, discoverCatalog, loadRegistryModel
 import { resolveBaseUrl, setSessionEndUserId, setSessionId } from "./config.ts";
 import { MILLISECONDS_PER_SECOND } from "./constants.ts";
 import { deviceLogin, deviceRefresh } from "./device-auth.ts";
-import { clearPendingAsks, consumePendingAsk, installEnvelopeFetch } from "./envelope.ts";
-import { type CompiledSteeringRule, loadSteeringRules, steeringSubject } from "./steering.ts";
+import { clearPendingAsks, consumePendingAsk, installEnvelopeFetch, onSteer } from "./envelope.ts";
 
 const PROVIDER_ID = "switchboard";
 const PROVIDER_NAME = "Switchboard";
@@ -32,26 +31,11 @@ export default async function (pi: ExtensionAPI) {
 		? buildModelConfigs(await discoverCatalog(baseUrl, environmentKey), registry)
 		: [];
 	installEnvelopeFetch();
-	let steeringRules: CompiledSteeringRule[] = [];
+	onSteer((steer, deliverAs) => {
+		pi.sendUserMessage(steer, { deliverAs });
+	});
 	pi.on("session_start", (_event, ctx) => {
 		setSessionId(ctx.sessionManager.getSessionId());
-		steeringRules = loadSteeringRules(process.cwd(), ctx);
-		if (steeringRules.length > 0 && ctx.hasUI) {
-			ctx.ui.notify(`Switchboard: ${steeringRules.length} steering rule(s) active`, "info");
-		}
-	});
-	pi.on("tool_result", (event, ctx) => {
-		if (event.isError || steeringRules.length === 0) return;
-		const subject = steeringSubject(event);
-		for (const rule of steeringRules) {
-			if (rule.tool !== event.toolName) continue;
-			if (!rule.pattern.test(subject)) continue;
-			if (ctx.isIdle()) {
-				pi.sendUserMessage(rule.steer);
-			} else {
-				pi.sendUserMessage(rule.steer, { deliverAs: rule.deliverAs ?? "followUp" });
-			}
-		}
 	});
 	pi.on("tool_call", async (event, ctx) => {
 		const ask = consumePendingAsk(event.toolCallId);
