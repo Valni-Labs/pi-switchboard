@@ -26,6 +26,15 @@ function textResult(text: string, details: unknown): AgentToolResult<unknown> {
 	return { content: [{ type: "text", text }], details };
 }
 
+function errorMessage(result: unknown, name: string, status: number): string {
+	if (result !== null && typeof result === "object" && "error" in result) {
+		const envelope = result as { error: unknown; code?: unknown };
+		const code = typeof envelope.code === "string" ? ` [${envelope.code}]` : "";
+		return `${String(envelope.error)}${code}`;
+	}
+	return `Tool ${name} failed (HTTP ${status}).`;
+}
+
 export function makeProxyExecute(name: string) {
 	return async (_toolCallId: string, params: unknown, signal?: AbortSignal): Promise<AgentToolResult<unknown>> => {
 		const token = resolveAccessToken();
@@ -48,11 +57,7 @@ export function makeProxyExecute(name: string) {
 
 		const result: unknown = await response.json().catch(() => null);
 		if (!response.ok) {
-			const message =
-				result !== null && typeof result === "object" && "error" in result
-					? String((result as { error: unknown }).error)
-					: `Tool ${name} failed (HTTP ${response.status}).`;
-			return textResult(message, result);
+			return textResult(errorMessage(result, name, response.status), result);
 		}
 		return textResult(JSON.stringify(result), result);
 	};
