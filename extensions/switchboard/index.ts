@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { ModelsStoreEntry, OAuthCredentials, RefreshModelsContext } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { buildModelConfigs, credentialBearer, discoverCatalog, loadRegistryModels } from "./catalog.ts";
-import { resolveBaseUrl, setSessionAccessToken, setSessionEndUserId, setSessionId } from "./config.ts";
+import { clearSessionState, resolveBaseUrl, setSessionAccessToken, setSessionEndUserId, setSessionId } from "./config.ts";
 import { MILLISECONDS_PER_SECOND } from "./constants.ts";
 import { deviceLogin, deviceRefresh } from "./device-auth.ts";
 import { clearPendingAsks, consumePendingAsk, installEnvelopeFetch, onSteer } from "./envelope.ts";
@@ -56,6 +56,7 @@ export default async function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", () => {
 		clearPendingAsks();
 		clearSpawnHandles();
+		clearSessionState();
 	});
 	pi.registerProvider(PROVIDER_ID, {
 		name: PROVIDER_NAME,

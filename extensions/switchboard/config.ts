@@ -76,6 +76,12 @@ export function resolveAccessToken(): string | null {
 	return sessionAccessToken;
 }
 
+export function clearSessionState(): void {
+	sessionAccessToken = null;
+	sessionEndUserId = null;
+	sessionId = null;
+}
+
 export function setSessionId(id: string): void {
 	sessionId = id.length > 0 ? id : null;
 }
