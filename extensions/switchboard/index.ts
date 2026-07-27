@@ -29,9 +29,20 @@ export default async function (pi: ExtensionAPI) {
 	const baseUrl = resolveBaseUrl();
 	const registry = await loadRegistryModels();
 	const environmentKey = process.env.SWITCHBOARD_API_KEY;
-	const startupModels = environmentKey
-		? buildModelConfigs(await discoverCatalog(baseUrl, environmentKey), registry)
-		: [];
+	let startupModels: ReturnType<typeof buildModelConfigs> = [];
+	if (environmentKey) {
+		const [catalog, tools] = await Promise.allSettled([
+			discoverCatalog(baseUrl, environmentKey),
+			discoverTools(baseUrl, environmentKey),
+		]);
+		if (catalog.status === "rejected") throw catalog.reason;
+		startupModels = buildModelConfigs(catalog.value, registry);
+		if (tools.status === "fulfilled") {
+			registerServerTools(pi, tools.value);
+		} else {
+			console.error("pi-switchboard: server tool discovery failed for key mode", tools.reason);
+		}
+	}
 	installEnvelopeFetch();
 	onSteer((steer, deliverAs) => {
 		pi.sendUserMessage(steer, { deliverAs });

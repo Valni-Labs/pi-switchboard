@@ -5,7 +5,6 @@ import { PROVIDER_ID } from "./constants.ts";
 const TOOLS_PATH = "/v1/tools";
 const DISCOVER_TIMEOUT_MS = 10_000;
 const SESSION_HEADER = "X-Switchboard-Session";
-const OAUTH_SOURCE = "OAuth";
 
 export interface AdvertisedTool {
 	name: string;
@@ -44,8 +43,7 @@ export async function resolveInvokeToken(ctx: ExtensionContext): Promise<string 
 	} catch {
 		return null;
 	}
-	if (resolution?.source !== OAUTH_SOURCE) return null;
-	return resolution.auth.apiKey ?? null;
+	return resolution?.auth.apiKey ?? null;
 }
 
 export function makeProxyExecute(name: string) {
@@ -57,7 +55,7 @@ export function makeProxyExecute(name: string) {
 		ctx: ExtensionContext,
 	): Promise<AgentToolResult<unknown>> => {
 		const token = await resolveInvokeToken(ctx);
-		if (!token) return textResult(`Not signed in to Switchboard (OAuth required for tools) — cannot run ${name}. Run /login in pi.`, null);
+		if (!token) return textResult(`Not signed in to Switchboard — cannot run ${name}. Run /login in pi, or set SWITCHBOARD_API_KEY for key-based use.`, null);
 		const headers: Record<string, string> = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 		const sessionId = resolveSessionId();
 		if (sessionId !== null) headers[SESSION_HEADER] = sessionId;
