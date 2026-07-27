@@ -57,7 +57,7 @@ export function makeProxyExecute(name: string) {
 		ctx: ExtensionContext,
 	): Promise<AgentToolResult<unknown>> => {
 		const token = await resolveInvokeToken(ctx);
-		if (!token) return textResult(`Not signed in to Switchboard — cannot run ${name}. Run /login in pi.`, null);
+		if (!token) return textResult(`Not signed in to Switchboard (OAuth required for tools) — cannot run ${name}. Run /login in pi.`, null);
 		const headers: Record<string, string> = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 		const sessionId = resolveSessionId();
 		if (sessionId !== null) headers[SESSION_HEADER] = sessionId;
