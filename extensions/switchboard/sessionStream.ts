@@ -15,11 +15,11 @@ let reconnectAttempt = 0;
 let stopped = true;
 
 function streamUrl(sessionId: string): string {
-	const base = new URL(resolveBaseUrl());
-	base.protocol = base.protocol === "http:" ? "ws:" : "wss:";
-	base.pathname = STREAM_PATH;
-	base.searchParams.set(SESSION_QUERY_PARAMETER, sessionId);
-	return base.toString();
+	const url = new URL(`${resolveBaseUrl()}${STREAM_PATH}`);
+	if (url.protocol === "https:") url.protocol = "wss:";
+	else if (url.protocol === "http:") url.protocol = "ws:";
+	url.searchParams.set(SESSION_QUERY_PARAMETER, sessionId);
+	return url.toString();
 }
 
 async function resolveStreamToken(context: ExtensionContext): Promise<string | null> {
@@ -42,6 +42,7 @@ function scheduleReconnect(context: ExtensionContext): void {
 		reconnectTimer = null;
 		void connect(context);
 	}, delay);
+	reconnectTimer.unref?.();
 }
 
 function handleFrame(raw: unknown): void {
@@ -88,8 +89,9 @@ async function connect(context: ExtensionContext): Promise<void> {
 		try {
 			socket.close();
 		} catch {
-			return;
+			void 0;
 		}
+		scheduleReconnect(context);
 	});
 }
 
