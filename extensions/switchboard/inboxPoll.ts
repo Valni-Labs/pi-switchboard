@@ -35,6 +35,7 @@ async function drainOnce(context: ExtensionContext): Promise<void> {
 		return;
 	}
 	if (body === null || typeof body !== "object") return;
+	if (resolveSessionId() !== sessionId) return;
 	deliverSteers((body as { steers?: unknown }).steers);
 }
 
