@@ -1,9 +1,11 @@
-import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
-import { resolveAccessToken, resolveBaseUrl, resolveSessionId } from "./config.ts";
+import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { resolveBaseUrl, resolveSessionId } from "./config.ts";
+import { PROVIDER_ID } from "./constants.ts";
 
 const TOOLS_PATH = "/v1/tools";
 const DISCOVER_TIMEOUT_MS = 10_000;
 const SESSION_HEADER = "X-Switchboard-Session";
+const OAUTH_SOURCE = "OAuth";
 
 export interface AdvertisedTool {
 	name: string;
@@ -35,10 +37,27 @@ function errorMessage(result: unknown, name: string, status: number): string {
 	return `Tool ${name} failed (HTTP ${status}).`;
 }
 
+async function resolveInvokeToken(ctx: ExtensionContext): Promise<string | null> {
+	let resolution: Awaited<ReturnType<ExtensionContext["modelRegistry"]["getProviderAuth"]>>;
+	try {
+		resolution = await ctx.modelRegistry.getProviderAuth(PROVIDER_ID);
+	} catch {
+		return null;
+	}
+	if (resolution?.source !== OAUTH_SOURCE) return null;
+	return resolution.auth.apiKey ?? null;
+}
+
 export function makeProxyExecute(name: string) {
-	return async (_toolCallId: string, params: unknown, signal?: AbortSignal): Promise<AgentToolResult<unknown>> => {
-		const token = resolveAccessToken();
-		if (!token) return textResult(`Not signed in to Switchboard — cannot run ${name}.`, null);
+	return async (
+		_toolCallId: string,
+		params: unknown,
+		signal: AbortSignal | undefined,
+		_onUpdate: unknown,
+		ctx: ExtensionContext,
+	): Promise<AgentToolResult<unknown>> => {
+		const token = await resolveInvokeToken(ctx);
+		if (!token) return textResult(`Not signed in to Switchboard (OAuth required for tools) — cannot run ${name}. Run /login in pi.`, null);
 		const headers: Record<string, string> = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 		const sessionId = resolveSessionId();
 		if (sessionId !== null) headers[SESSION_HEADER] = sessionId;
