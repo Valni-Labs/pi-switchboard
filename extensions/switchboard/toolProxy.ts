@@ -37,7 +37,7 @@ function errorMessage(result: unknown, name: string, status: number): string {
 	return `Tool ${name} failed (HTTP ${status}).`;
 }
 
-async function resolveInvokeToken(ctx: ExtensionContext): Promise<string | null> {
+export async function resolveInvokeToken(ctx: ExtensionContext): Promise<string | null> {
 	let resolution: Awaited<ReturnType<ExtensionContext["modelRegistry"]["getProviderAuth"]>>;
 	try {
 		resolution = await ctx.modelRegistry.getProviderAuth(PROVIDER_ID);

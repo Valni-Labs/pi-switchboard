@@ -20,7 +20,7 @@ export function onSteer(sink: SteerSink): void {
 	steerSink = sink;
 }
 
-function deliverSteers(entries: unknown): void {
+export function deliverSteers(entries: unknown): void {
 	if (!Array.isArray(entries)) return;
 	for (const entry of entries) {
 		if (entry === null || typeof entry !== "object") continue;
