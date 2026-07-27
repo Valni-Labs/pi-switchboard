@@ -8,7 +8,7 @@ import { clearSessionId, resolveBaseUrl, setSessionEndUserId, setSessionId } fro
 import { MILLISECONDS_PER_SECOND, PROVIDER_ID } from "./constants.ts";
 import { deviceLogin, deviceRefresh } from "./device-auth.ts";
 import { clearPendingAsks, consumePendingAsk, installEnvelopeFetch, onSteer } from "./envelope.ts";
-import { startIdleInboxPoll, stopIdleInboxPoll } from "./inboxPoll.ts";
+import { startSessionStream, stopSessionStream } from "./sessionStream.ts";
 import { discoverTools } from "./toolProxy.ts";
 import { registerServerTools } from "./tools.ts";
 
@@ -49,7 +49,7 @@ export default async function (pi: ExtensionAPI) {
 	});
 	pi.on("session_start", (_event, ctx) => {
 		setSessionId(ctx.sessionManager.getSessionId());
-		startIdleInboxPoll(ctx);
+		startSessionStream(ctx);
 	});
 	pi.on("tool_call", async (event, ctx) => {
 		const ask = consumePendingAsk(event.toolCallId);
@@ -67,7 +67,7 @@ export default async function (pi: ExtensionAPI) {
 	});
 	pi.on("session_shutdown", () => {
 		clearPendingAsks();
-		stopIdleInboxPoll();
+		stopSessionStream();
 		clearSessionId();
 	});
 	pi.registerProvider(PROVIDER_ID, {
