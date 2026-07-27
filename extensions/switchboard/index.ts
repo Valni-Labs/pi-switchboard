@@ -33,6 +33,13 @@ export default async function (pi: ExtensionAPI) {
 		? buildModelConfigs(await discoverCatalog(baseUrl, environmentKey), registry)
 		: [];
 	installEnvelopeFetch();
+	if (environmentKey) {
+		try {
+			registerServerTools(pi, await discoverTools(baseUrl, environmentKey));
+		} catch (error) {
+			console.error("pi-switchboard: server tool discovery failed for key mode", error);
+		}
+	}
 	onSteer((steer, deliverAs) => {
 		pi.sendUserMessage(steer, { deliverAs });
 	});
