@@ -4,10 +4,11 @@ import { fileURLToPath } from "node:url";
 import type { ModelsStoreEntry, OAuthCredentials, RefreshModelsContext } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { buildModelConfigs, credentialBearer, discoverCatalog, loadRegistryModels } from "./catalog.ts";
-import { resolveBaseUrl, setSessionEndUserId, setSessionId } from "./config.ts";
+import { clearSessionId, resolveBaseUrl, setSessionEndUserId, setSessionId } from "./config.ts";
 import { MILLISECONDS_PER_SECOND, PROVIDER_ID } from "./constants.ts";
 import { deviceLogin, deviceRefresh } from "./device-auth.ts";
 import { clearPendingAsks, consumePendingAsk, installEnvelopeFetch, onSteer } from "./envelope.ts";
+import { startIdleInboxPoll, stopIdleInboxPoll } from "./inboxPoll.ts";
 import { discoverTools } from "./toolProxy.ts";
 import { registerServerTools } from "./tools.ts";
 
@@ -37,6 +38,7 @@ export default async function (pi: ExtensionAPI) {
 	});
 	pi.on("session_start", (_event, ctx) => {
 		setSessionId(ctx.sessionManager.getSessionId());
+		startIdleInboxPoll(ctx);
 	});
 	pi.on("tool_call", async (event, ctx) => {
 		const ask = consumePendingAsk(event.toolCallId);
@@ -54,6 +56,8 @@ export default async function (pi: ExtensionAPI) {
 	});
 	pi.on("session_shutdown", () => {
 		clearPendingAsks();
+		stopIdleInboxPoll();
+		clearSessionId();
 	});
 	pi.registerProvider(PROVIDER_ID, {
 		name: PROVIDER_NAME,

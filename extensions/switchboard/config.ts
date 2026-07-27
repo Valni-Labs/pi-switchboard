@@ -67,6 +67,10 @@ export function resolveSessionId(): string | null {
 	return sessionId;
 }
 
+export function clearSessionId(): void {
+	sessionId = null;
+}
+
 export function resolveEndUserId(): string {
 	const fromSession = sessionEndUserId ?? process.env.SWITCHBOARD_END_USER_ID;
 	if (!fromSession) {
