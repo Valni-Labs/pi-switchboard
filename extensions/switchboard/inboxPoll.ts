@@ -1,7 +1,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveBaseUrl, resolveSessionId } from "./config.ts";
+import { PROVIDER_ID } from "./constants.ts";
 import { deliverSteers } from "./envelope.ts";
-import { resolveInvokeToken } from "./toolProxy.ts";
 
 const INBOX_PATH = "/v1/switchboard/steer-inbox";
 const SESSION_HEADER = "X-Switchboard-Session";
@@ -15,7 +15,14 @@ async function drainOnce(context: ExtensionContext): Promise<void> {
 	if (!context.isIdle()) return;
 	const sessionId = resolveSessionId();
 	if (sessionId === null) return;
-	const token = await resolveInvokeToken(context);
+	let resolution: Awaited<ReturnType<ExtensionContext["modelRegistry"]["getProviderAuth"]>>;
+	try {
+		resolution = await context.modelRegistry.getProviderAuth(PROVIDER_ID);
+	} catch {
+		return;
+	}
+	if (resolution?.source !== "OAuth") return;
+	const token = resolution.auth.apiKey ?? null;
 	if (token === null) return;
 
 	let response: Response;
