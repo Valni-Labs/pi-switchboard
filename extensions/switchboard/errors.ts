@@ -76,6 +76,12 @@ function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string
 			return "This model is no longer available in the catalog. Pick a different model.";
 		case "SWB-5207":
 			return "The provider account behind Switchboard is out of credit. Retrying will not help — the account needs topping up.";
+		case "SWB-5208": {
+			const rejection = upstreamDetail(envelope);
+			return rejection
+				? `The provider rejected the request Switchboard sent: ${rejection}. Retrying the same request will not help.`
+				: "The provider rejected the request Switchboard sent. Retrying the same request will not help; report the reference.";
+		}
 		case "SWB-5002":
 		case "SWB-5003":
 		case "SWB-5101":
