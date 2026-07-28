@@ -6,7 +6,7 @@ const PORTAL_URL = "https://valni.app/platform";
 const ERROR_DETAIL_LIMIT = 300;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]+/g;
 const PROVIDER_TROUBLE_MESSAGE = "The model provider is having trouble. Retry shortly, or switch to a different model.";
-const TRANSIENT_PROVIDER_CODES = new Set(["SWB-5204", "SWB-5205", "SWB-5206"]);
+const TRANSIENT_PROVIDER_CODES = new Set(["SWB-5105", "SWB-5204", "SWB-5205", "SWB-5206"]);
 
 export interface SwitchboardErrorEnvelope {
 	code?: string;
@@ -14,6 +14,7 @@ export interface SwitchboardErrorEnvelope {
 	fault?: string;
 	requestId?: string;
 	detail?: string;
+	upstreamStatus?: number;
 	requestedMaxTokens?: number;
 	maxOutputTokens?: number;
 }
@@ -40,7 +41,6 @@ function upstreamDetail(envelope: SwitchboardErrorEnvelope): string {
 function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string; error: string }): string {
 	switch (envelope.code) {
 		case "SWB-1001":
-		case "SWB-1002":
 			return `Wrong application key. Log in to Switchboard at ${PORTAL_URL} and get a key, then set your application key and restart pi.`;
 		case "SWB-1013":
 			return "Your Switchboard session expired. Run /login to sign in again.";
@@ -98,8 +98,13 @@ function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string
 	return "Switchboard hit an internal problem. Not your fault. Retry shortly, and report the request id if it keeps happening.";
 }
 
+function referenceCode(envelope: SwitchboardErrorEnvelope & { code: string }): string {
+	return typeof envelope.upstreamStatus === "number" ? `${envelope.code}(${envelope.upstreamStatus})` : envelope.code;
+}
+
 function userFacingMessage(envelope: SwitchboardErrorEnvelope & { code: string; error: string }, status: number): string {
-	const reference = envelope.requestId ? `${envelope.code}, request ${envelope.requestId}` : `${envelope.code}, HTTP ${status}`;
+	const code = referenceCode(envelope);
+	const reference = envelope.requestId ? `${code}, request ${envelope.requestId}` : `${code}, HTTP ${status}`;
 	return `${switchboardGuidance(envelope)} [${reference}]`;
 }
 
