@@ -4,12 +4,37 @@ import type { SwitchboardKind } from "./types.ts";
 
 const PORTAL_URL = "https://valni.app/platform";
 const ERROR_DETAIL_LIMIT = 300;
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]+/g;
+const PROVIDER_TROUBLE_MESSAGE = "The model provider is having trouble. Retry shortly, or switch to a different model.";
+const TRANSIENT_PROVIDER_CODES = new Set(["SWB-5204", "SWB-5205", "SWB-5206"]);
 
 export interface SwitchboardErrorEnvelope {
 	code?: string;
 	error?: string;
 	fault?: string;
 	requestId?: string;
+	detail?: string;
+	requestedMaxTokens?: number;
+	maxOutputTokens?: number;
+}
+
+function displayableDetail(text: string): string {
+	return singleLine(text.replace(CONTROL_CHARACTERS, " ")).slice(0, ERROR_DETAIL_LIMIT);
+}
+
+function upstreamDetail(envelope: SwitchboardErrorEnvelope): string {
+	if (typeof envelope.detail !== "string") return "";
+	const trimmed = envelope.detail.trim();
+	if (!trimmed) return "";
+	if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+		try {
+			const parsed = JSON.parse(trimmed) as { error?: { message?: unknown } };
+			const message = parsed.error?.message;
+			if (typeof message === "string" && message.trim()) return displayableDetail(message);
+		} catch {
+		}
+	}
+	return displayableDetail(trimmed);
 }
 
 function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string; error: string }): string {
@@ -42,9 +67,15 @@ function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string
 			return "Your end user id is not registered on this account. Fix the end user id or register it in the portal, then restart pi.";
 		case "SWB-2008":
 			return `This end user is disabled on the account. Re-enable it at ${PORTAL_URL} to continue.`;
+		case "SWB-2048":
+			return typeof envelope.maxOutputTokens === "number" && typeof envelope.requestedMaxTokens === "number"
+				? `This model accepts at most ${envelope.maxOutputTokens} output tokens and the request asked for ${envelope.requestedMaxTokens}. Lower max_tokens and retry.`
+				: "The request asked for more output tokens than this model allows. Lower max_tokens and retry.";
 		case "SWB-3001":
 		case "SWB-3005":
 			return "This model is no longer available in the catalog. Pick a different model.";
+		case "SWB-5207":
+			return "The provider account behind Switchboard is out of credit. Retrying will not help — the account needs topping up.";
 		case "SWB-5002":
 		case "SWB-5003":
 		case "SWB-5101":
@@ -55,7 +86,11 @@ function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string
 			return "This model is not available on Switchboard right now. Pick a different model, and report the reference if it keeps happening.";
 	}
 	if (envelope.fault === "provider") {
-		return "The model provider is having trouble. Retry shortly, or switch to a different model.";
+		const detail = upstreamDetail(envelope);
+		if (!detail) return PROVIDER_TROUBLE_MESSAGE;
+		return TRANSIENT_PROVIDER_CODES.has(envelope.code)
+			? `The model provider is having trouble: ${detail}. Retry shortly, or switch to a different model.`
+			: `The model provider returned an error: ${detail}`;
 	}
 	if (envelope.fault === "client") {
 		return `Switchboard rejected the request: ${envelope.error}.`;
