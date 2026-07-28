@@ -4,6 +4,9 @@ import type { SwitchboardKind } from "./types.ts";
 
 const PORTAL_URL = "https://valni.app/platform";
 const ERROR_DETAIL_LIMIT = 300;
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]+/g;
+const PROVIDER_TROUBLE_MESSAGE = "The model provider is having trouble. Retry shortly, or switch to a different model.";
+const TRANSIENT_PROVIDER_CODES = new Set(["SWB-5204", "SWB-5205", "SWB-5206"]);
 
 export interface SwitchboardErrorEnvelope {
 	code?: string;
@@ -15,17 +18,23 @@ export interface SwitchboardErrorEnvelope {
 	maxOutputTokens?: number;
 }
 
+function displayableDetail(text: string): string {
+	return singleLine(text.replace(CONTROL_CHARACTERS, " ")).slice(0, ERROR_DETAIL_LIMIT);
+}
+
 function upstreamDetail(envelope: SwitchboardErrorEnvelope): string {
 	if (typeof envelope.detail !== "string") return "";
 	const trimmed = envelope.detail.trim();
 	if (!trimmed) return "";
-	try {
-		const parsed = JSON.parse(trimmed) as { error?: { message?: unknown } };
-		const message = parsed.error?.message;
-		if (typeof message === "string" && message.trim()) return singleLine(message).slice(0, ERROR_DETAIL_LIMIT);
-	} catch {
+	if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+		try {
+			const parsed = JSON.parse(trimmed) as { error?: { message?: unknown } };
+			const message = parsed.error?.message;
+			if (typeof message === "string" && message.trim()) return displayableDetail(message);
+		} catch {
+		}
 	}
-	return singleLine(trimmed).slice(0, ERROR_DETAIL_LIMIT);
+	return displayableDetail(trimmed);
 }
 
 function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string; error: string }): string {
@@ -78,9 +87,10 @@ function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string
 	}
 	if (envelope.fault === "provider") {
 		const detail = upstreamDetail(envelope);
-		return detail
-			? `The model provider rejected the request: ${detail}`
-			: "The model provider is having trouble. Retry shortly, or switch to a different model.";
+		if (!detail) return PROVIDER_TROUBLE_MESSAGE;
+		return TRANSIENT_PROVIDER_CODES.has(envelope.code)
+			? `The model provider is having trouble: ${detail}. Retry shortly, or switch to a different model.`
+			: `The model provider returned an error: ${detail}`;
 	}
 	if (envelope.fault === "client") {
 		return `Switchboard rejected the request: ${envelope.error}.`;
