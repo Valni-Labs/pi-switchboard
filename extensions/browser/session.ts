@@ -54,15 +54,20 @@ export interface BrowserOpenResult {
 	page: BrowserPageState | null;
 }
 
-export type BrowserTransport = "remote" | "local";
-
 export interface BrowserConnector {
-	transport: BrowserTransport;
 	list(): Promise<BrowserConnectionInfo[]>;
 	open(name: string): Promise<BrowserOpenResult>;
 }
 
+export interface DriverResult {
+	text: string;
+	image?: { data: string; mimeType: string };
+	state: BrowserPageState | null;
+}
+
 const SNAPSHOT_CHARACTER_LIMIT = 24_000;
+const TRUNCATION_NOTE = "[snapshot truncated: the page is large; interact with what is visible or navigate closer to what you need]";
+const NO_SESSION_MESSAGE = "No browser connection is open. Call browser_connect with a connection name first.";
 
 export function boundSnapshot(snapshot: string): { snapshot: string; truncated: boolean } {
 	if (snapshot.length <= SNAPSHOT_CHARACTER_LIMIT) return { snapshot, truncated: false };
@@ -90,4 +95,97 @@ export function needsReauth(requestedUrl: string | null, previous: BrowserPageSt
 	if (requestedUrl !== null) return !sameLocation(requestedUrl, current.url);
 	if (previous === null || previous.hasPasswordField) return false;
 	return !sameLocation(previous.url, current.url);
+}
+
+interface ActiveBrowser {
+	name: string;
+	session: BrowserSession;
+	lastState: BrowserPageState | null;
+}
+
+let active: ActiveBrowser | null = null;
+
+function pageFooter(state: BrowserPageState): string {
+	return `url: ${state.url}\ntitle: ${state.title}`;
+}
+
+function failure(error: unknown): DriverResult {
+	return { text: error instanceof Error ? error.message : String(error), state: null };
+}
+
+function reauthMessage(name: string, state: BrowserPageState): string {
+	return `The "${name}" connection looks signed out: this page is showing a login form. Re-authenticate the connection, then retry.\n${pageFooter(state)}`;
+}
+
+export async function closeActiveBrowser(): Promise<void> {
+	const current = active;
+	active = null;
+	if (current === null) return;
+	try {
+		await current.session.close();
+	} catch {
+		void 0;
+	}
+}
+
+export async function openConnection(connector: BrowserConnector, name: string): Promise<DriverResult> {
+	await closeActiveBrowser();
+	try {
+		const opened = await connector.open(name);
+		active = { name, session: opened.session, lastState: opened.page };
+		const location = opened.page === null ? "" : `\n${pageFooter(opened.page)}`;
+		return {
+			text: `Opened browser connection "${name}". Use browser_navigate to load a page, then browser_snapshot to see it.${location}`,
+			state: opened.page,
+		};
+	} catch (error) {
+		return failure(error);
+	}
+}
+
+export async function runBrowserAction(
+	label: string,
+	requestedUrl: string | null,
+	action: (session: BrowserSession) => Promise<BrowserPageState>,
+): Promise<DriverResult> {
+	if (active === null) return { text: NO_SESSION_MESSAGE, state: null };
+	const current = active;
+	try {
+		const state = await action(current.session);
+		const reauth = needsReauth(requestedUrl, current.lastState, state);
+		current.lastState = state;
+		if (reauth) return { text: reauthMessage(current.name, state), state };
+		return { text: `${label}\n${pageFooter(state)}`, state };
+	} catch (error) {
+		return failure(error);
+	}
+}
+
+export async function takeSnapshot(): Promise<DriverResult> {
+	if (active === null) return { text: NO_SESSION_MESSAGE, state: null };
+	const current = active;
+	try {
+		const result = await current.session.snapshot();
+		const bounded = boundSnapshot(result.snapshot);
+		const reauth = needsReauth(null, current.lastState, result.page);
+		current.lastState = result.page;
+		const note = result.truncated || bounded.truncated ? `\n${TRUNCATION_NOTE}` : "";
+		const text = `${bounded.snapshot}${note}\n${pageFooter(result.page)}`;
+		if (reauth) return { text: `${reauthMessage(current.name, result.page)}\n${text}`, state: result.page };
+		return { text, state: result.page };
+	} catch (error) {
+		return failure(error);
+	}
+}
+
+export async function takeScreenshot(): Promise<DriverResult> {
+	if (active === null) return { text: NO_SESSION_MESSAGE, state: null };
+	const current = active;
+	try {
+		const result = await current.session.screenshot();
+		current.lastState = result.page;
+		return { text: pageFooter(result.page), image: { data: result.data, mimeType: result.mimeType }, state: result.page };
+	} catch (error) {
+		return failure(error);
+	}
 }

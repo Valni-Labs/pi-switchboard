@@ -73,25 +73,14 @@ Switchboard errors are translated for the person at the keyboard, not the API de
 
 ## Browser connections (preview)
 
-Some of the systems an agent needs have no API at all: a dental practice portal, a supplier back office, a government form. A browser connection gives the agent a persistent, signed-in browser session for one of those sites. You sign in once, and from then on the agent can open the session and click, type, and read pages on your behalf.
+Some of the systems an agent needs have no API at all: a dental practice portal, a supplier back office, a government form. A browser connection gives the agent a persistent, signed-in browser session for one of those sites, hosted with your Switchboard account. You sign in once from the portal, and from then on the agent can open the session and click, type, and read pages on your behalf. No password is ever stored on your machine or in pi; the hosted browser session is the credential.
 
-The agent drives the session through a small tool suite. `browser_connect` opens a named connection, `browser_snapshot` shows the current page as an accessibility tree with element refs, and `browser_navigate`, `browser_click`, `browser_type`, `browser_fill_form`, `browser_select`, `browser_press_key`, `browser_wait_for`, `browser_back`, and `browser_screenshot` do the driving. Every result carries the page URL and title, and a page that unexpectedly shows a login form comes back as a clear needs-re-auth message instead of a silent dead end.
+The agent drives the session through a small tool suite. `browser_connect` opens a named connection, `browser_snapshot` shows the current page as an accessibility tree with element refs, and `browser_navigate`, `browser_click`, `browser_type`, `browser_fill_form`, `browser_select`, `browser_press_key`, `browser_wait_for`, `browser_back`, and `browser_screenshot` do the driving. Every result carries the page URL and title, and a page that unexpectedly shows a login form comes back as a clear needs-re-auth message instead of a silent dead end. `/connect` lists the connections on your account.
 
-Real connections are hosted and managed server-side with your Switchboard account, with sign-in in the portal. The hosted service has not shipped yet, so today the tools report that it is unavailable.
-
-### Local dev harness
-
-For development and tests, `pi --browser-local` swaps the hosted transport for a local Playwright Chromium:
-
-- One-time setup: `npx playwright install chromium`
-- `/connect add <name> <login-url>` opens a headed Chromium on the login page. Sign in there, confirm in pi, and the browser profile under `~/.pi/agent/switchboard-browser/` (mode 0700) becomes the session. No password is ever stored; the profile is the credential.
-- `/connect` lists connections; `/connect remove <name>` deletes one, profile included.
-- `pi --browser-local --browser-headed` shows the window while the agent drives.
-
-The harness is for development on your own machine. Real connections belong on the hosted transport.
+pi-switchboard ships only the thin client for this: a typed contract and transport against Switchboard's `/v1/browser` endpoints. The hosted service has not shipped yet, so today the tools report that it is unavailable.
 
 ## Not yet covered
 
 - Context-overflow error normalization for pi's auto-compaction (unknown ids have no context window, so pi cannot preemptively compact for them)
 - Per-model quirk knowledge for non-registry ids beyond the conservative defaults; this belongs in Linecard capability profiles long-term
-- Server-side browser session hosting: the `/v1/browser` endpoints the remote browser transport targets
+- Server-side browser session hosting: the `/v1/browser` endpoints and the browser fleet service behind them that the thin client here targets

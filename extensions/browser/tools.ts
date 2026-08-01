@@ -1,75 +1,60 @@
-import { join } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
-import { getAgentDir, type AgentToolResult, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { resolveBaseUrl, resolveBearer } from "./config.ts";
-import { localBrowserConnector } from "./local.ts";
-import { remoteBrowserConnector } from "./remote.ts";
-import { needsReauth, type BrowserConnector, type BrowserPageState, type BrowserSession } from "./session.ts";
+import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { remoteBrowserConnector, resolveBaseUrl, resolveBearer } from "./remote.ts";
+import {
+	openConnection,
+	runBrowserAction,
+	takeScreenshot,
+	takeSnapshot,
+	type BrowserConnectionInfo,
+	type BrowserConnector,
+	type DriverResult,
+} from "./session.ts";
 
-export const LOCAL_FLAG = "browser-local";
-export const HEADED_FLAG = "browser-headed";
-export const LOCAL_STATE_DIR = "switchboard-browser";
-
-const NO_SESSION_MESSAGE = "No browser connection is open. Call browser_connect with a connection name first.";
-
-interface ActiveBrowser {
-	name: string;
-	session: BrowserSession;
-	lastState: BrowserPageState | null;
-}
-
-let active: ActiveBrowser | null = null;
-
-export function localStateDir(): string {
-	return join(getAgentDir(), LOCAL_STATE_DIR);
-}
-
-export function browserConnector(pi: ExtensionAPI, ctx: ExtensionContext): BrowserConnector {
-	if (pi.getFlag(LOCAL_FLAG) === true) {
-		return localBrowserConnector(localStateDir(), { headed: pi.getFlag(HEADED_FLAG) === true });
-	}
+function connector(ctx: ExtensionContext): BrowserConnector {
 	return remoteBrowserConnector(resolveBaseUrl(), () => resolveBearer(ctx));
 }
 
-export async function closeActiveBrowser(): Promise<void> {
-	const current = active;
-	active = null;
-	if (current === null) return;
-	try {
-		await current.session.close();
-	} catch {
-		void 0;
+function toToolResult(result: DriverResult): AgentToolResult<unknown> {
+	if (result.image === undefined) {
+		return { content: [{ type: "text", text: result.text }], details: result.state };
 	}
+	return {
+		content: [
+			{ type: "image", data: result.image.data, mimeType: result.image.mimeType },
+			{ type: "text", text: result.text },
+		],
+		details: result.state,
+	};
 }
 
-function pageFooter(state: BrowserPageState): string {
-	return `url: ${state.url}\ntitle: ${state.title}`;
+function formatDate(timestamp: number): string {
+	return new Date(timestamp).toISOString().slice(0, 10);
 }
 
-function message(text: string): AgentToolResult<unknown> {
-	return { content: [{ type: "text", text }], details: null };
+function formatConnection(connection: BrowserConnectionInfo): string {
+	const lastUsed = connection.lastUsedAt === null ? "never" : formatDate(connection.lastUsedAt);
+	return `${connection.name}: ${connection.loginUrl} (${connection.status}, created ${formatDate(connection.createdAt)}, last used ${lastUsed})`;
 }
 
-function reauthMessage(name: string, state: BrowserPageState): string {
-	return `The "${name}" connection looks signed out: this page is showing a login form. Re-authenticate the connection, then retry.\n${pageFooter(state)}`;
-}
-
-async function runAction(
-	label: string,
-	requestedUrl: string | null,
-	action: (session: BrowserSession) => Promise<BrowserPageState>,
-): Promise<AgentToolResult<unknown>> {
-	if (active === null) return message(NO_SESSION_MESSAGE);
-	const current = active;
-	try {
-		const state = await action(current.session);
-		const reauth = needsReauth(requestedUrl, current.lastState, state);
-		current.lastState = state;
-		if (reauth) return message(reauthMessage(current.name, state));
-		return { content: [{ type: "text", text: `${label}\n${pageFooter(state)}` }], details: state };
-	} catch (error) {
-		return message(error instanceof Error ? error.message : String(error));
-	}
+export function registerConnectCommand(pi: ExtensionAPI): void {
+	pi.registerCommand("connect", {
+		description: "List the browser connections on your Switchboard account",
+		handler: async (_args, ctx) => {
+			let connections: BrowserConnectionInfo[];
+			try {
+				connections = await connector(ctx).list();
+			} catch (error) {
+				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+				return;
+			}
+			if (connections.length === 0) {
+				ctx.ui.notify("No browser connections on this account.", "info");
+				return;
+			}
+			ctx.ui.notify(connections.map(formatConnection).join("\n"), "info");
+		},
+	});
 }
 
 export function registerBrowserTools(pi: ExtensionAPI): void {
@@ -82,16 +67,7 @@ export function registerBrowserTools(pi: ExtensionAPI): void {
 			name: Type.String({ description: "Name of the browser connection to open." }),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			await closeActiveBrowser();
-			const connector = browserConnector(pi, ctx);
-			try {
-				const opened = await connector.open(params.name);
-				active = { name: params.name, session: opened.session, lastState: opened.page };
-				const location = opened.page === null ? "" : `\n${pageFooter(opened.page)}`;
-				return message(`Opened browser connection "${params.name}" (${connector.transport}). Use browser_navigate to load a page, then browser_snapshot to see it.${location}`);
-			} catch (error) {
-				return message(error instanceof Error ? error.message : String(error));
-			}
+			return toToolResult(await openConnection(connector(ctx), params.name));
 		},
 	});
 	pi.registerTool({
@@ -101,14 +77,18 @@ export function registerBrowserTools(pi: ExtensionAPI): void {
 		parameters: Type.Object({
 			url: Type.String({ description: "Absolute URL to open." }),
 		}),
-		execute: (_toolCallId, params) => runAction(`Navigated to ${params.url}.`, params.url, (session) => session.navigate(params.url)),
+		async execute(_toolCallId, params) {
+			return toToolResult(await runBrowserAction(`Navigated to ${params.url}.`, params.url, (session) => session.navigate(params.url)));
+		},
 	});
 	pi.registerTool({
 		name: "browser_back",
 		label: "browser_back",
 		description: "Go back one page in the open browser connection's history.",
 		parameters: Type.Object({}),
-		execute: () => runAction("Went back one page.", null, (session) => session.back()),
+		async execute() {
+			return toToolResult(await runBrowserAction("Went back one page.", null, (session) => session.back()));
+		},
 	});
 	pi.registerTool({
 		name: "browser_snapshot",
@@ -117,19 +97,7 @@ export function registerBrowserTools(pi: ExtensionAPI): void {
 			"Capture the current page as an accessibility tree with element refs like [ref=e12]. This is how you see the page; use the refs with browser_click, browser_type, browser_fill_form, and browser_select. Refs go stale when the page changes.",
 		parameters: Type.Object({}),
 		async execute() {
-			if (active === null) return message(NO_SESSION_MESSAGE);
-			const current = active;
-			try {
-				const result = await current.session.snapshot();
-				const reauth = needsReauth(null, current.lastState, result.page);
-				current.lastState = result.page;
-				const note = result.truncated ? "\n[snapshot truncated — the page is large; interact with what is visible or navigate closer to what you need]" : "";
-				const text = `${result.snapshot}${note}\n${pageFooter(result.page)}`;
-				if (reauth) return message(`${reauthMessage(current.name, result.page)}\n${text}`);
-				return { content: [{ type: "text", text }], details: result.page };
-			} catch (error) {
-				return message(error instanceof Error ? error.message : String(error));
-			}
+			return toToolResult(await takeSnapshot());
 		},
 	});
 	pi.registerTool({
@@ -139,7 +107,9 @@ export function registerBrowserTools(pi: ExtensionAPI): void {
 		parameters: Type.Object({
 			ref: Type.String({ description: "Element ref from browser_snapshot, e.g. e12." }),
 		}),
-		execute: (_toolCallId, params) => runAction(`Clicked ${params.ref}.`, null, (session) => session.click(params.ref)),
+		async execute(_toolCallId, params) {
+			return toToolResult(await runBrowserAction(`Clicked ${params.ref}.`, null, (session) => session.click(params.ref)));
+		},
 	});
 	pi.registerTool({
 		name: "browser_type",
@@ -149,7 +119,9 @@ export function registerBrowserTools(pi: ExtensionAPI): void {
 			ref: Type.String({ description: "Element ref from browser_snapshot." }),
 			text: Type.String({ description: "Text to set as the field's value." }),
 		}),
-		execute: (_toolCallId, params) => runAction(`Typed into ${params.ref}.`, null, (session) => session.type(params.ref, params.text)),
+		async execute(_toolCallId, params) {
+			return toToolResult(await runBrowserAction(`Typed into ${params.ref}.`, null, (session) => session.type(params.ref, params.text)));
+		},
 	});
 	pi.registerTool({
 		name: "browser_fill_form",
@@ -164,7 +136,9 @@ export function registerBrowserTools(pi: ExtensionAPI): void {
 				{ description: "Fields to fill, in order." },
 			),
 		}),
-		execute: (_toolCallId, params) => runAction(`Filled ${params.fields.length} fields.`, null, (session) => session.fillForm(params.fields)),
+		async execute(_toolCallId, params) {
+			return toToolResult(await runBrowserAction(`Filled ${params.fields.length} fields.`, null, (session) => session.fillForm(params.fields)));
+		},
 	});
 	pi.registerTool({
 		name: "browser_select",
@@ -174,7 +148,9 @@ export function registerBrowserTools(pi: ExtensionAPI): void {
 			ref: Type.String({ description: "Element ref from browser_snapshot." }),
 			value: Type.String({ description: "Option value or label to select." }),
 		}),
-		execute: (_toolCallId, params) => runAction(`Selected "${params.value}" in ${params.ref}.`, null, (session) => session.select(params.ref, params.value)),
+		async execute(_toolCallId, params) {
+			return toToolResult(await runBrowserAction(`Selected "${params.value}" in ${params.ref}.`, null, (session) => session.select(params.ref, params.value)));
+		},
 	});
 	pi.registerTool({
 		name: "browser_press_key",
@@ -183,7 +159,9 @@ export function registerBrowserTools(pi: ExtensionAPI): void {
 		parameters: Type.Object({
 			key: Type.String({ description: "Key name, e.g. Enter." }),
 		}),
-		execute: (_toolCallId, params) => runAction(`Pressed ${params.key}.`, null, (session) => session.pressKey(params.key)),
+		async execute(_toolCallId, params) {
+			return toToolResult(await runBrowserAction(`Pressed ${params.key}.`, null, (session) => session.pressKey(params.key)));
+		},
 	});
 	pi.registerTool({
 		name: "browser_wait_for",
@@ -194,10 +172,13 @@ export function registerBrowserTools(pi: ExtensionAPI): void {
 			selector: Type.Optional(Type.String({ description: "CSS selector to wait for." })),
 			timeout_ms: Type.Optional(Type.Number({ description: "How long to wait, in milliseconds. Defaults to 10000." })),
 		}),
-		execute: (_toolCallId, params) =>
-			runAction("The wait condition was met.", null, (session) =>
-				session.waitFor({ text: params.text, selector: params.selector, timeoutMs: params.timeout_ms }),
-			),
+		async execute(_toolCallId, params) {
+			return toToolResult(
+				await runBrowserAction("The wait condition was met.", null, (session) =>
+					session.waitFor({ text: params.text, selector: params.selector, timeoutMs: params.timeout_ms }),
+				),
+			);
+		},
 	});
 	pi.registerTool({
 		name: "browser_screenshot",
@@ -205,21 +186,7 @@ export function registerBrowserTools(pi: ExtensionAPI): void {
 		description: "Capture a screenshot of the current page. Prefer browser_snapshot for interaction; use this when layout or imagery matters.",
 		parameters: Type.Object({}),
 		async execute() {
-			if (active === null) return message(NO_SESSION_MESSAGE);
-			const current = active;
-			try {
-				const result = await current.session.screenshot();
-				current.lastState = result.page;
-				return {
-					content: [
-						{ type: "image", data: result.data, mimeType: result.mimeType },
-						{ type: "text", text: pageFooter(result.page) },
-					],
-					details: result.page,
-				};
-			} catch (error) {
-				return message(error instanceof Error ? error.message : String(error));
-			}
+			return toToolResult(await takeScreenshot());
 		},
 	});
 }

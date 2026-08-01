@@ -1,3 +1,4 @@
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	BROWSER_CONNECTIONS_PATH,
 	BROWSER_SESSIONS_PATH,
@@ -12,11 +13,27 @@ import {
 } from "./contract.ts";
 import type { BrowserConnector, BrowserFormField, BrowserPageState, BrowserSession, BrowserWaitTarget } from "./session.ts";
 
+const DEFAULT_BASE_URL = "https://switchboard.valni.app";
+const PROVIDER_ID = "switchboard";
 const NOT_AVAILABLE_MESSAGE = "Server-side browser connections are not available on Switchboard yet.";
 const NOT_SIGNED_IN_MESSAGE = "Not signed in to Switchboard. Run /login in pi, or set SWITCHBOARD_API_KEY for key-based use.";
 const REQUEST_TIMEOUT_MS = 60_000;
 
 export type BearerSupplier = () => Promise<string | null>;
+
+export function resolveBaseUrl(): string {
+	return process.env.SWITCHBOARD_BASE_URL ?? DEFAULT_BASE_URL;
+}
+
+export async function resolveBearer(ctx: ExtensionContext): Promise<string | null> {
+	let resolution: Awaited<ReturnType<ExtensionContext["modelRegistry"]["getProviderAuth"]>>;
+	try {
+		resolution = await ctx.modelRegistry.getProviderAuth(PROVIDER_ID);
+	} catch {
+		return null;
+	}
+	return resolution?.auth.apiKey ?? null;
+}
 
 async function requestFailure(response: Response): Promise<Error> {
 	const body = await response.text();
@@ -77,7 +94,6 @@ function remoteSession(baseUrl: string, bearer: BearerSupplier, sessionId: strin
 
 export function remoteBrowserConnector(baseUrl: string, bearer: BearerSupplier): BrowserConnector {
 	return {
-		transport: "remote",
 		list: async () => {
 			const result = await request<WireConnectionsResponse>(baseUrl, bearer, "GET", BROWSER_CONNECTIONS_PATH);
 			return result.connections.map(connectionFromWire);
