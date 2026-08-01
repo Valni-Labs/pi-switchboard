@@ -7,6 +7,12 @@
     "type": "git",
     "url": "https://github.com/Valni-Labs/pi-switchboard"
   },
+  "scripts": {
+    "test": "node --test \"extensions/browser/tests/*.test.ts\""
+  },
+  "dependencies": {
+    "playwright": "^1.62.1"
+  },
   "pi": {
     "extensions": ["./extensions"]
   }
