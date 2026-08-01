@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Credential } from "@earendil-works/pi-ai";
 import { SENTINEL_SEGMENT } from "./constants.ts";
-import { resolveBaseUrl, setSessionEndUserId } from "./config.ts";
+import { rememberSessionCredentials, resolveBaseUrl, setSessionEndUserId } from "./config.ts";
 import { describeFailure, describeNetworkFailure, isAbortError, singleLine } from "./errors.ts";
 import { KIND_TO_API, type KindProfile, type ModelRecord, type ModelRecordPrice, type ModelsPage, type RegistryModel, type SwitchboardKind } from "./types.ts";
 
@@ -113,6 +113,7 @@ export function credentialBearer(credential: Credential | undefined): string | n
 	if (!credential) return null;
 	if (credential.type === "oauth") {
 		if (typeof credential.endUserId === "string") setSessionEndUserId(credential.endUserId);
+		rememberSessionCredentials(credential);
 		return credential.access;
 	}
 	return credential.key ?? process.env.SWITCHBOARD_API_KEY ?? null;
