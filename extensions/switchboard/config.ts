@@ -60,6 +60,10 @@ export function recallSessionCredentials(): OAuthCredentials | null {
 	return sessionCredentials;
 }
 
+export function clearSessionCredentials(): void {
+	sessionCredentials = null;
+}
+
 export function resolveBaseUrl(): string {
 	return process.env.SWITCHBOARD_BASE_URL ?? localOverride.baseUrl ?? DEFAULT_BASE_URL;
 }

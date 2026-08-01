@@ -63,6 +63,21 @@ function requirePrompt(value: string, field: string): string {
 	return trimmed;
 }
 
+function requireEndpointUrl(value: string, field: string): string {
+	const trimmed = requirePrompt(value, field);
+	let parsed: URL;
+	try {
+		parsed = new URL(trimmed);
+	} catch {
+		throw new Error(`The ${field} must be a valid URL, got: ${trimmed}`);
+	}
+	const loopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+	if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) {
+		throw new Error(`The ${field} must use https (http is allowed only for localhost). The authorization code and client secret would otherwise travel in cleartext.`);
+	}
+	return trimmed;
+}
+
 function defaultSlug(name: string): string {
 	return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
 }
@@ -76,11 +91,11 @@ async function registerOauthApp(
 		message: `Provider slug (lowercase, unique for your company; empty = "${defaultSlug(name)}")`,
 		allowEmpty: true,
 	});
-	const authorizationEndpoint = requirePrompt(
+	const authorizationEndpoint = requireEndpointUrl(
 		await callbacks.onPrompt({ message: "Authorization endpoint (https URL)" }),
 		"authorization endpoint",
 	);
-	const tokenEndpoint = requirePrompt(
+	const tokenEndpoint = requireEndpointUrl(
 		await callbacks.onPrompt({ message: "Token endpoint (https URL)" }),
 		"token endpoint",
 	);
@@ -225,6 +240,8 @@ function loopbackAuthorize(app: OauthApp, callbacks: OAuthLoginCallbacks): Promi
 
 async function connectCustomOauth(access: string, callbacks: OAuthLoginCallbacks): Promise<void> {
 	const { app, clientSecret } = await chooseOauthApp(access, callbacks);
+	requireEndpointUrl(app.authorizationEndpoint, "authorization endpoint");
+	requireEndpointUrl(app.tokenEndpoint, "token endpoint");
 	const authorization = await loopbackAuthorize(app, callbacks);
 
 	const exchangeResponse = await fetch(app.tokenEndpoint, {

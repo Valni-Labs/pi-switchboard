@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { hostname } from "node:os";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import { MILLISECONDS_PER_SECOND } from "./constants.ts";
-import { rememberSessionCredentials, resolveAuthBaseUrl, setSessionEndUserId } from "./config.ts";
+import { clearSessionCredentials, rememberSessionCredentials, resolveAuthBaseUrl, setSessionEndUserId } from "./config.ts";
 import { describeFailure } from "./errors.ts";
 
 const DEVICE_AUTHORIZE_PATH = "/v1/device/authorize";
@@ -54,6 +54,7 @@ function toCredentials(token: DeviceTokenResponse): OAuthCredentials {
 }
 
 export async function deviceLogin(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
+	clearSessionCredentials();
 	const authBase = resolveAuthBaseUrl();
 	const authorizeResponse = await fetch(`${authBase}${DEVICE_AUTHORIZE_PATH}`, {
 		method: "POST",

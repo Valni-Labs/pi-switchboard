@@ -4,7 +4,14 @@ import { fileURLToPath } from "node:url";
 import type { ModelsStoreEntry, OAuthCredentials, RefreshModelsContext } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { buildModelConfigs, credentialBearer, discoverCatalog, loadRegistryModels } from "./catalog.ts";
-import { clearSessionId, rememberSessionCredentials, resolveBaseUrl, setSessionEndUserId, setSessionId } from "./config.ts";
+import {
+	clearSessionCredentials,
+	clearSessionId,
+	rememberSessionCredentials,
+	resolveBaseUrl,
+	setSessionEndUserId,
+	setSessionId,
+} from "./config.ts";
 import { MILLISECONDS_PER_SECOND, PROVIDER_ID } from "./constants.ts";
 import { switchboardLogin } from "./connections.ts";
 import { deviceRefresh } from "./device-auth.ts";
@@ -70,6 +77,7 @@ export default async function (pi: ExtensionAPI) {
 		clearPendingAsks();
 		stopSessionStream();
 		clearSessionId();
+		clearSessionCredentials();
 	});
 	pi.registerProvider(PROVIDER_ID, {
 		name: PROVIDER_NAME,
