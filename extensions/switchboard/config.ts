@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { OAuthCredentials } from "@earendil-works/pi-ai";
 
 const DEFAULT_BASE_URL = "https://switchboard.valni.app";
 const DEFAULT_AUTH_BASE_URL = "https://api.valni.app";
@@ -46,6 +47,22 @@ const localOverride = loadLocalOverride();
 let sessionEndUserId: string | null = null;
 
 let sessionId: string | null = null;
+
+let sessionCredentials: OAuthCredentials | null = null;
+
+export function rememberSessionCredentials(credentials: OAuthCredentials): void {
+	sessionCredentials = credentials;
+}
+
+export function recallSessionCredentials(): OAuthCredentials | null {
+	if (sessionCredentials === null) return null;
+	if (typeof sessionCredentials.expires === "number" && sessionCredentials.expires <= Date.now()) return null;
+	return sessionCredentials;
+}
+
+export function clearSessionCredentials(): void {
+	sessionCredentials = null;
+}
 
 export function resolveBaseUrl(): string {
 	return process.env.SWITCHBOARD_BASE_URL ?? localOverride.baseUrl ?? DEFAULT_BASE_URL;

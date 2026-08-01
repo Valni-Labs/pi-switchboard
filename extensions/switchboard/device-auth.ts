@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { hostname } from "node:os";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import { MILLISECONDS_PER_SECOND } from "./constants.ts";
-import { resolveAuthBaseUrl, setSessionEndUserId } from "./config.ts";
+import { clearSessionCredentials, rememberSessionCredentials, resolveAuthBaseUrl, setSessionEndUserId } from "./config.ts";
 import { describeFailure } from "./errors.ts";
 
 const DEVICE_AUTHORIZE_PATH = "/v1/device/authorize";
@@ -19,7 +19,7 @@ interface DeviceTokenResponse {
 	error?: string;
 }
 
-function openInBrowser(url: string): void {
+export function openInBrowser(url: string): void {
 	const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
 	const commandArguments = process.platform === "win32" ? ["/c", "start", "", url] : [url];
 	try {
@@ -28,7 +28,7 @@ function openInBrowser(url: string): void {
 	}
 }
 
-function sleep(milliseconds: number, signal?: AbortSignal): Promise<void> {
+export function sleep(milliseconds: number, signal?: AbortSignal): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(resolve, milliseconds);
 		signal?.addEventListener("abort", () => {
@@ -43,15 +43,18 @@ function toCredentials(token: DeviceTokenResponse): OAuthCredentials {
 		throw new Error(`Switchboard sign-in returned an incomplete token response`);
 	}
 	setSessionEndUserId(token.end_user_id);
-	return {
+	const credentials: OAuthCredentials = {
 		refresh: token.refresh_token,
 		access: token.access_token,
 		expires: Date.now() + token.expires_in * MILLISECONDS_PER_SECOND,
 		endUserId: token.end_user_id,
 	};
+	rememberSessionCredentials(credentials);
+	return credentials;
 }
 
 export async function deviceLogin(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
+	clearSessionCredentials();
 	const authBase = resolveAuthBaseUrl();
 	const authorizeResponse = await fetch(`${authBase}${DEVICE_AUTHORIZE_PATH}`, {
 		method: "POST",

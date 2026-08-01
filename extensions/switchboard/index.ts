@@ -4,9 +4,17 @@ import { fileURLToPath } from "node:url";
 import type { ModelsStoreEntry, OAuthCredentials, RefreshModelsContext } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { buildModelConfigs, credentialBearer, discoverCatalog, loadRegistryModels } from "./catalog.ts";
-import { clearSessionId, resolveBaseUrl, setSessionEndUserId, setSessionId } from "./config.ts";
+import {
+	clearSessionCredentials,
+	clearSessionId,
+	rememberSessionCredentials,
+	resolveBaseUrl,
+	setSessionEndUserId,
+	setSessionId,
+} from "./config.ts";
 import { MILLISECONDS_PER_SECOND, PROVIDER_ID } from "./constants.ts";
-import { deviceLogin, deviceRefresh } from "./device-auth.ts";
+import { switchboardLogin } from "./connections.ts";
+import { deviceRefresh } from "./device-auth.ts";
 import { clearPendingAsks, consumePendingAsk, installEnvelopeFetch, onSteer } from "./envelope.ts";
 import { startSessionStream, stopSessionStream } from "./sessionStream.ts";
 import { discoverTools } from "./toolProxy.ts";
@@ -69,6 +77,7 @@ export default async function (pi: ExtensionAPI) {
 		clearPendingAsks();
 		stopSessionStream();
 		clearSessionId();
+		clearSessionCredentials();
 	});
 	pi.registerProvider(PROVIDER_ID, {
 		name: PROVIDER_NAME,
@@ -76,10 +85,11 @@ export default async function (pi: ExtensionAPI) {
 		apiKey: "$SWITCHBOARD_API_KEY",
 		oauth: {
 			name: "Switchboard",
-			login: deviceLogin,
+			login: switchboardLogin,
 			refreshToken: deviceRefresh,
 			getApiKey: (credentials: OAuthCredentials) => {
 				if (typeof credentials.endUserId === "string") setSessionEndUserId(credentials.endUserId);
+				rememberSessionCredentials(credentials);
 				return credentials.access;
 			},
 		},
