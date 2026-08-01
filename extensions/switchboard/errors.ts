@@ -59,6 +59,10 @@ function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string
 		case "SWB-1010":
 		case "SWB-1012":
 			return "This model is not enabled for this account. Switch models, or enable it in the portal.";
+		case "SWB-1025":
+			return `This model runs on your own provider subscription, which is not connected to Switchboard yet. Connect it at ${PORTAL_URL}/switchboard#connections, then retry.`;
+		case "SWB-1026":
+			return `Your provider subscription connection to Switchboard expired. Reconnect it at ${PORTAL_URL}/switchboard#connections, then retry.`;
 		case "SWB-1301":
 			return "Company policy denied this tool call. Change the policy in the portal, or ask the agent for a different approach.";
 		case "SWB-2005":
