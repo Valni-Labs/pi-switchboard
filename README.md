@@ -71,7 +71,16 @@ Tested against pi v0.80.x. The extension reads pi's bundled model registry for c
 
 Switchboard errors are translated for the person at the keyboard, not the API developer, and wrapped in each provider's native error shape so pi displays them as plain messages. Account conditions come with their fix: a wrong key says to log in to Switchboard and get a key, an empty balance says to top up, spend and rate limits point at the portal, a disallowed model says to switch models. Provider outages say to retry or switch models, and anything internal to Switchboard says so and asks for the request id. Every message ends with the code and request id for support, e.g. `Out of Switchboard credit. Top up at https://valni.app/platform and retry. [SWB-1007, request rqe_...]`.
 
+## Browser connections (preview)
+
+Some of the systems an agent needs have no API at all: a dental practice portal, a supplier back office, a government form. A browser connection gives the agent a persistent, signed-in browser session for one of those sites, hosted with your Switchboard account. You sign in once from the portal, and from then on the agent can open the session and click, type, and read pages on your behalf. No password is ever stored on your machine or in pi; the hosted browser session is the credential.
+
+The agent drives the session through a small tool suite. `browser_connect` opens a named connection, `browser_snapshot` shows the current page as an accessibility tree with element refs, and `browser_navigate`, `browser_click`, `browser_type`, `browser_fill_form`, `browser_select`, `browser_press_key`, `browser_wait_for`, `browser_back`, and `browser_screenshot` do the driving. Every result carries the page URL and title, and a page that unexpectedly shows a login form comes back as a clear needs-re-auth message instead of a silent dead end. `/connect` lists the connections on your account.
+
+pi-switchboard ships only the thin client for this: a typed contract and transport against Switchboard's `/v1/browser` endpoints. The hosted service has not shipped yet, so today the tools report that it is unavailable.
+
 ## Not yet covered
 
 - Context-overflow error normalization for pi's auto-compaction (unknown ids have no context window, so pi cannot preemptively compact for them)
 - Per-model quirk knowledge for non-registry ids beyond the conservative defaults; this belongs in Linecard capability profiles long-term
+- Server-side browser session hosting: the `/v1/browser` endpoints and the browser fleet service behind them that the thin client here targets
