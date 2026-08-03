@@ -5,7 +5,7 @@ import { PROVIDER_ID, spawnedConnectionId } from "./constants.ts";
 const TOOLS_PATH = "/v1/tools";
 const DISCOVER_TIMEOUT_MS = 10_000;
 const SESSION_HEADER = "X-Switchboard-Session";
-const CONNECTION_TOOLS = new Set(["send_message", "close_connection"]);
+const CONNECTION_TOOLS = new Set(["send_message", "close_automation_connection"]);
 const CONNECTION_ID_PARAM = "connection_id";
 
 export function withSpawnedConnectionId(name: string, params: unknown, connectionId: string | null): unknown {

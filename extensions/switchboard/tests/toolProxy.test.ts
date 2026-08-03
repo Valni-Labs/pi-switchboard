@@ -9,9 +9,9 @@ test("injects the spawned connection id into a send_message call that omits it",
 	);
 });
 
-test("injects the spawned connection id into a close_connection call", () => {
+test("injects the spawned connection id into a close_automation_connection call", () => {
 	assert.deepEqual(
-		withSpawnedConnectionId("close_connection", { reason: "done" }, "con_abc"),
+		withSpawnedConnectionId("close_automation_connection", { reason: "done" }, "con_abc"),
 		{ reason: "done", connection_id: "con_abc" },
 	);
 });
