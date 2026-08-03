@@ -1,7 +1,9 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveBaseUrl, resolveSessionId } from "./config.ts";
-import { PROVIDER_ID } from "./constants.ts";
+import { PROVIDER_ID, spawnedConnectionId } from "./constants.ts";
 import { deliverSteers } from "./envelope.ts";
+
+const KEY_ENV = "SWITCHBOARD_API_KEY";
 
 const STREAM_PATH = "/v1/switchboard/session-stream";
 const SESSION_QUERY_PARAMETER = "session";
@@ -22,7 +24,15 @@ function streamUrl(sessionId: string): string {
 	return url.toString();
 }
 
+export function spawnedStreamKey(connectionId: string | null, envKey: string | undefined): string | null {
+	if (connectionId === null) return null;
+	const key = envKey?.trim();
+	return key ? key : null;
+}
+
 async function resolveStreamToken(context: ExtensionContext): Promise<string | null> {
+	const connectionId = spawnedConnectionId();
+	if (connectionId !== null) return spawnedStreamKey(connectionId, process.env[KEY_ENV]);
 	let resolution: Awaited<ReturnType<ExtensionContext["modelRegistry"]["getProviderAuth"]>>;
 	try {
 		resolution = await context.modelRegistry.getProviderAuth(PROVIDER_ID);
