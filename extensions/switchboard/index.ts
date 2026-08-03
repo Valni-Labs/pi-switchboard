@@ -12,13 +12,12 @@ import {
 	setSessionEndUserId,
 	setSessionId,
 } from "./config.ts";
-import { MILLISECONDS_PER_SECOND, PROVIDER_ID } from "./constants.ts";
+import { MILLISECONDS_PER_SECOND, PROVIDER_ID, spawnedConnectionId } from "./constants.ts";
 import { switchboardLogin } from "./connections.ts";
 import { deviceRefresh } from "./device-auth.ts";
 import { clearPendingAsks, consumePendingAsk, installEnvelopeFetch, onSteer } from "./envelope.ts";
 import { startSessionStream, stopSessionStream } from "./sessionStream.ts";
 import { registerParticipantFraming } from "./participant.ts";
-import { registerTaskHistory } from "./taskHistory.ts";
 import { discoverTools } from "./toolProxy.ts";
 import { registerServerTools } from "./tools.ts";
 
@@ -55,12 +54,11 @@ export default async function (pi: ExtensionAPI) {
 	}
 	installEnvelopeFetch();
 	registerParticipantFraming(pi);
-	registerTaskHistory(pi);
 	onSteer((steer, deliverAs) => {
 		pi.sendUserMessage(steer, { deliverAs });
 	});
 	pi.on("session_start", (_event, ctx) => {
-		setSessionId(ctx.sessionManager.getSessionId());
+		setSessionId(spawnedConnectionId() ?? ctx.sessionManager.getSessionId());
 		startSessionStream(ctx);
 	});
 	pi.on("tool_call", async (event, ctx) => {
