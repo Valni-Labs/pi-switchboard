@@ -1,10 +1,21 @@
 import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveBaseUrl, resolveSessionId } from "./config.ts";
-import { PROVIDER_ID } from "./constants.ts";
+import { PROVIDER_ID, spawnedConnectionId } from "./constants.ts";
 
 const TOOLS_PATH = "/v1/tools";
 const DISCOVER_TIMEOUT_MS = 10_000;
 const SESSION_HEADER = "X-Switchboard-Session";
+const CONNECTION_TOOLS = new Set(["send_message", "close_automation_connection"]);
+const CONNECTION_ID_PARAM = "connection_id";
+
+export function withSpawnedConnectionId(name: string, params: unknown, connectionId: string | null): unknown {
+	if (!CONNECTION_TOOLS.has(name) || connectionId === null) return params;
+	if (params === null || typeof params !== "object" || Array.isArray(params)) return params;
+	const record = params as Record<string, unknown>;
+	const existing = record[CONNECTION_ID_PARAM];
+	if (typeof existing === "string" && existing.trim() !== "") return params;
+	return { ...record, [CONNECTION_ID_PARAM]: connectionId };
+}
 
 export interface AdvertisedTool {
 	name: string;
@@ -65,7 +76,7 @@ export function makeProxyExecute(name: string) {
 			response = await fetch(`${resolveBaseUrl()}${TOOLS_PATH}/${encodeURIComponent(name)}/invoke`, {
 				method: "POST",
 				headers,
-				body: JSON.stringify({ arguments: params }),
+				body: JSON.stringify({ arguments: withSpawnedConnectionId(name, params, spawnedConnectionId()) }),
 				signal,
 			});
 		} catch (error) {

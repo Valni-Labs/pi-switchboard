@@ -14,8 +14,9 @@ test("composeParticipantSystemPrompt appends the framing after an existing promp
 	assert.ok(composed.includes("\n\n"));
 });
 
-test("the framing points at send_message as the only reply channel and names the status signals", () => {
+test("the framing points at send_message as the only reply channel, the expects_response hint, and close_automation_connection", () => {
 	assert.ok(PARTICIPANT_FRAMING.includes("send_message"));
-	assert.ok(PARTICIPANT_FRAMING.includes("expectsResponseBack"));
-	assert.ok(PARTICIPANT_FRAMING.includes("noResponseNeeded"));
+	assert.ok(PARTICIPANT_FRAMING.includes("expects_response"));
+	assert.ok(PARTICIPANT_FRAMING.includes("close_automation_connection"));
+	assert.ok(PARTICIPANT_FRAMING.includes("stays open"));
 });
