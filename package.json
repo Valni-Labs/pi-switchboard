@@ -1,6 +1,6 @@
 {
   "name": "pi-switchboard",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "Route the pi coding agent through Switchboard: one prepaid balance, spend controls, and a ledger for every model in the catalog",
   "keywords": [
     "pi-package"
@@ -13,7 +13,7 @@
     "node": ">=22.19.0"
   },
   "scripts": {
-    "test": "node --test \"extensions/browser/tests/*.test.ts\""
+    "test": "node --test \"extensions/browser/tests/*.test.ts\" \"extensions/switchboard/tests/*.test.ts\""
   },
   "pi": {
     "extensions": [
