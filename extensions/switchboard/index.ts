@@ -17,6 +17,7 @@ import { switchboardLogin } from "./connections.ts";
 import { deviceRefresh } from "./device-auth.ts";
 import { clearPendingAsks, consumePendingAsk, installEnvelopeFetch, onSteer } from "./envelope.ts";
 import { startSessionStream, stopSessionStream } from "./sessionStream.ts";
+import { registerParticipantFraming } from "./participant.ts";
 import { registerTaskHistory } from "./taskHistory.ts";
 import { discoverTools } from "./toolProxy.ts";
 import { registerServerTools } from "./tools.ts";
@@ -53,6 +54,7 @@ export default async function (pi: ExtensionAPI) {
 		}
 	}
 	installEnvelopeFetch();
+	registerParticipantFraming(pi);
 	registerTaskHistory(pi);
 	onSteer((steer, deliverAs) => {
 		pi.sendUserMessage(steer, { deliverAs });
