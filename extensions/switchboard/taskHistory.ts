@@ -67,7 +67,7 @@ function toAgentMessage(entry: HistoryEntry): AgentMessage {
 	return { role: ROLE_USER, content, timestamp: HISTORY_TIMESTAMP } as unknown as AgentMessage;
 }
 
-function headText(message: AgentMessage): string | null {
+function messageText(message: AgentMessage): string | null {
 	const content = (message as { content?: unknown }).content;
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return null;
@@ -80,13 +80,19 @@ function headText(message: AgentMessage): string | null {
 	return null;
 }
 
+function historyPrefixAlreadyPresent(history: HistoryEntry[], current: AgentMessage[]): boolean {
+	if (current.length < history.length) return false;
+	for (let index = 0; index < history.length; index++) {
+		const message = current[index];
+		if ((message as { role?: unknown }).role !== history[index].role) return false;
+		if (messageText(message) !== history[index].content) return false;
+	}
+	return true;
+}
+
 export function withHistoryPrepended(history: HistoryEntry[], current: AgentMessage[]): AgentMessage[] | null {
 	if (history.length === 0) return null;
-	const head = current[0];
-	const first = history[0];
-	if (head !== undefined && (head as { role?: unknown }).role === first.role && headText(head) === first.content) {
-		return null;
-	}
+	if (historyPrefixAlreadyPresent(history, current)) return null;
 	return [...history.map(toAgentMessage), ...current];
 }
 
