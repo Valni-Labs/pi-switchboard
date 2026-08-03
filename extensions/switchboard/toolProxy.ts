@@ -5,6 +5,17 @@ import { PROVIDER_ID } from "./constants.ts";
 const TOOLS_PATH = "/v1/tools";
 const DISCOVER_TIMEOUT_MS = 10_000;
 const SESSION_HEADER = "X-Switchboard-Session";
+const SEND_MESSAGE_TOOL = "send_message";
+const THREAD_ID_ENV = "RUNNER_THREAD_ID";
+const THREAD_ID_PARAM = "thread_id";
+
+export function withSpawnedThreadId(name: string, params: unknown, threadId: string | undefined): unknown {
+	if (name !== SEND_MESSAGE_TOOL || threadId === undefined || threadId === "") return params;
+	if (params === null || typeof params !== "object" || Array.isArray(params)) return params;
+	const record = params as Record<string, unknown>;
+	if (typeof record[THREAD_ID_PARAM] === "string" && record[THREAD_ID_PARAM] !== "") return params;
+	return { ...record, [THREAD_ID_PARAM]: threadId };
+}
 
 export interface AdvertisedTool {
 	name: string;
@@ -65,7 +76,7 @@ export function makeProxyExecute(name: string) {
 			response = await fetch(`${resolveBaseUrl()}${TOOLS_PATH}/${encodeURIComponent(name)}/invoke`, {
 				method: "POST",
 				headers,
-				body: JSON.stringify({ arguments: params }),
+				body: JSON.stringify({ arguments: withSpawnedThreadId(name, params, process.env[THREAD_ID_ENV]) }),
 				signal,
 			});
 		} catch (error) {
