@@ -118,6 +118,8 @@ function reauthMessage(name: string, state: BrowserPageState): string {
 	return `The "${name}" connection looks signed out: this page is showing a login form. Re-authenticate the connection, then retry.\n${pageFooter(state)}`;
 }
 
+const NOTHING_TO_CLOSE_MESSAGE = "No browser session is open, so there is nothing to close.";
+
 export async function closeActiveBrowser(): Promise<void> {
 	const current = active;
 	active = null;
@@ -127,6 +129,22 @@ export async function closeActiveBrowser(): Promise<void> {
 	} catch {
 		void 0;
 	}
+}
+
+export async function closeBrowserSession(): Promise<DriverResult> {
+	const current = active;
+	if (current === null) return { text: NOTHING_TO_CLOSE_MESSAGE, state: null };
+	try {
+		await current.session.close();
+	} catch (error) {
+		return failure(error);
+	}
+	active = null;
+	const target = current.reauthName === null ? "the browser session" : `browser connection "${current.reauthName}"`;
+	return {
+		text: `Closed ${target}. The session ended and its worker was freed; for a signed-in connection this saved the session so it persists next time.`,
+		state: null,
+	};
 }
 
 export async function openConnection(connector: BrowserConnector, name: string): Promise<DriverResult> {

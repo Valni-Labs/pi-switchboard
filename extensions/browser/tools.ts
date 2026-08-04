@@ -2,6 +2,7 @@ import { Type } from "@earendil-works/pi-ai";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { remoteBrowserConnector, resolveBaseUrl, resolveBearer } from "./remote.ts";
 import {
+	closeBrowserSession,
 	openConnection,
 	openEphemeralSession,
 	runBrowserAction,
@@ -81,6 +82,16 @@ export function registerBrowserTools(pi: ExtensionAPI): void {
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return toToolResult(await openConnection(connector(ctx), params.name));
+		},
+	});
+	pi.registerTool({
+		name: "close_browser_automation",
+		label: "close_browser_automation",
+		description:
+			"Close the open browser session and free its worker. Do this when you are done browsing: for a signed-in browser_connect connection, closing is what saves the session so it persists next time, so close deliberately rather than letting the session idle out. Closing is final for this session but recoverable: reopen with open_browser_automation or browser_connect if you need the browser again. Safe to call when nothing is open.",
+		parameters: Type.Object({}),
+		async execute() {
+			return toToolResult(await closeBrowserSession());
 		},
 	});
 	pi.registerTool({
