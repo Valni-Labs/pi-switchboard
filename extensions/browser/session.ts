@@ -57,6 +57,7 @@ export interface BrowserOpenResult {
 export interface BrowserConnector {
 	list(): Promise<BrowserConnectionInfo[]>;
 	open(name: string): Promise<BrowserOpenResult>;
+	openEphemeral(url?: string): Promise<BrowserOpenResult>;
 }
 
 export interface DriverResult {
@@ -67,7 +68,7 @@ export interface DriverResult {
 
 const SNAPSHOT_CHARACTER_LIMIT = 24_000;
 const TRUNCATION_NOTE = "[snapshot truncated: the page is large; interact with what is visible or navigate closer to what you need]";
-const NO_SESSION_MESSAGE = "No browser connection is open. Call browser_connect with a connection name first.";
+const NO_SESSION_MESSAGE = "No browser session is open. Call open_browser_automation to start browsing, or browser_connect to open a named signed-in connection.";
 
 export function boundSnapshot(snapshot: string): { snapshot: string; truncated: boolean } {
 	if (snapshot.length <= SNAPSHOT_CHARACTER_LIMIT) return { snapshot, truncated: false };
@@ -98,7 +99,7 @@ export function needsReauth(requestedUrl: string | null, previous: BrowserPageSt
 }
 
 interface ActiveBrowser {
-	name: string;
+	reauthName: string | null;
 	session: BrowserSession;
 	lastState: BrowserPageState | null;
 }
@@ -132,10 +133,25 @@ export async function openConnection(connector: BrowserConnector, name: string):
 	await closeActiveBrowser();
 	try {
 		const opened = await connector.open(name);
-		active = { name, session: opened.session, lastState: opened.page };
+		active = { reauthName: name, session: opened.session, lastState: opened.page };
 		const location = opened.page === null ? "" : `\n${pageFooter(opened.page)}`;
 		return {
 			text: `Opened browser connection "${name}". Use browser_navigate to load a page, then browser_snapshot to see it.${location}`,
+			state: opened.page,
+		};
+	} catch (error) {
+		return failure(error);
+	}
+}
+
+export async function openEphemeralSession(connector: BrowserConnector, url?: string): Promise<DriverResult> {
+	await closeActiveBrowser();
+	try {
+		const opened = await connector.openEphemeral(url);
+		active = { reauthName: null, session: opened.session, lastState: opened.page };
+		const location = opened.page === null ? "" : `\n${pageFooter(opened.page)}`;
+		return {
+			text: `Opened a browser session. Use browser_navigate to load a page, then browser_snapshot to see it.${location}`,
 			state: opened.page,
 		};
 	} catch (error) {
@@ -151,10 +167,13 @@ export async function runBrowserAction(
 	if (active === null) return { text: NO_SESSION_MESSAGE, state: null };
 	const current = active;
 	try {
+		const previous = current.lastState;
 		const state = await action(current.session);
-		const reauth = needsReauth(requestedUrl, current.lastState, state);
 		current.lastState = state;
-		if (reauth) return { text: reauthMessage(current.name, state), state };
+		const reauthName = current.reauthName;
+		if (reauthName !== null && needsReauth(requestedUrl, previous, state)) {
+			return { text: reauthMessage(reauthName, state), state };
+		}
 		return { text: `${label}\n${pageFooter(state)}`, state };
 	} catch (error) {
 		return failure(error);
@@ -165,13 +184,16 @@ export async function takeSnapshot(): Promise<DriverResult> {
 	if (active === null) return { text: NO_SESSION_MESSAGE, state: null };
 	const current = active;
 	try {
+		const previous = current.lastState;
 		const result = await current.session.snapshot();
 		const bounded = boundSnapshot(result.snapshot);
-		const reauth = needsReauth(null, current.lastState, result.page);
 		current.lastState = result.page;
 		const note = result.truncated || bounded.truncated ? `\n${TRUNCATION_NOTE}` : "";
 		const text = `${bounded.snapshot}${note}\n${pageFooter(result.page)}`;
-		if (reauth) return { text: `${reauthMessage(current.name, result.page)}\n${text}`, state: result.page };
+		const reauthName = current.reauthName;
+		if (reauthName !== null && needsReauth(null, previous, result.page)) {
+			return { text: `${reauthMessage(reauthName, result.page)}\n${text}`, state: result.page };
+		}
 		return { text, state: result.page };
 	} catch (error) {
 		return failure(error);
