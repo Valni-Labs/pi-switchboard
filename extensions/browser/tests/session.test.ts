@@ -3,6 +3,7 @@ import { beforeEach, test } from "node:test";
 import {
 	boundSnapshot,
 	closeActiveBrowser,
+	closeBrowserSession,
 	needsReauth,
 	openConnection,
 	openEphemeralSession,
@@ -239,6 +240,46 @@ test("takeScreenshot returns the image and the footer text", async () => {
 	const result = await takeScreenshot();
 	assert.deepEqual(result.image, { data: "aGVsbG8=", mimeType: "image/jpeg" });
 	assert.equal(result.text, "url: https://a.example/home\ntitle: Portal");
+});
+
+test("closeBrowserSession ends the session and frees the worker", async () => {
+	const session = fakeSession();
+	await openConnection(fakeConnector(session), "clinic");
+	const result = await closeBrowserSession();
+	assert.equal(session.closed, 1);
+	assert.match(result.text, /Closed browser connection "clinic"/);
+	assert.match(result.text, /saved the session so it persists/);
+	assert.equal(result.state, null);
+});
+
+test("actions after a close report that no session is open", async () => {
+	const session = fakeSession();
+	await openConnection(fakeConnector(session), "clinic");
+	await closeBrowserSession();
+	const followUp = await runBrowserAction("Clicked e3.", null, (open) => open.click("e3"));
+	assert.match(followUp.text, /No browser session is open/);
+});
+
+test("closing again is a graceful no-op", async () => {
+	const session = fakeSession();
+	await openConnection(fakeConnector(session), "clinic");
+	await closeBrowserSession();
+	const again = await closeBrowserSession();
+	assert.match(again.text, /nothing to close/);
+	assert.equal(again.state, null);
+	assert.equal(session.closed, 1);
+});
+
+test("closeBrowserSession with nothing open reports nothing to close", async () => {
+	const result = await closeBrowserSession();
+	assert.match(result.text, /nothing to close/);
+	assert.equal(result.state, null);
+});
+
+test("closeBrowserSession names an ephemeral session without a connection", async () => {
+	await openEphemeralSession(fakeConnector(fakeSession()));
+	const result = await closeBrowserSession();
+	assert.match(result.text, /Closed the browser session/);
 });
 
 test("connecting again closes the previous session", async () => {

@@ -120,3 +120,21 @@ test("open then act posts typed actions to the session endpoint", async () => {
 	assert.equal(recorded[5].url, `${BASE_URL}/v1/browser/sessions/bs_1`);
 	assert.equal(recorded[5].method, "DELETE");
 });
+
+test("close treats a 404 as already closed", async () => {
+	respondWith(json(200, { session_id: "bs_9", page: wirePage }));
+	const opened = await remoteBrowserConnector(BASE_URL, bearer).open("clinic");
+
+	respondWith(new Response("gone", { status: 404 }));
+	await opened.session.close();
+	assert.equal(recorded[1].url, `${BASE_URL}/v1/browser/sessions/bs_9`);
+	assert.equal(recorded[1].method, "DELETE");
+});
+
+test("close surfaces a non-404 failure", async () => {
+	respondWith(json(200, { session_id: "bs_9", page: wirePage }));
+	const opened = await remoteBrowserConnector(BASE_URL, bearer).open("clinic");
+
+	respondWith(json(403, { code: "SWB-1301", error: "Company policy denied this tool call" }));
+	await assert.rejects(opened.session.close(), /Company policy denied this tool call \[SWB-1301\]/);
+});

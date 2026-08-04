@@ -51,6 +51,18 @@ async function requestFailure(response: Response): Promise<Error> {
 	return new Error(`Switchboard browser request failed (HTTP ${response.status}).`);
 }
 
+async function closeRequest(baseUrl: string, bearer: BearerSupplier, path: string): Promise<void> {
+	const token = await bearer();
+	if (token === null) throw new Error(NOT_SIGNED_IN_MESSAGE);
+	const response = await fetch(`${baseUrl}${path}`, {
+		method: "DELETE",
+		headers: { Authorization: `Bearer ${token}` },
+		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+	});
+	if (response.status === 404) return;
+	if (!response.ok) throw await requestFailure(response);
+}
+
 async function request<T>(baseUrl: string, bearer: BearerSupplier, method: string, path: string, body?: unknown): Promise<T> {
 	const token = await bearer();
 	if (token === null) throw new Error(NOT_SIGNED_IN_MESSAGE);
@@ -89,7 +101,7 @@ function remoteSession(baseUrl: string, bearer: BearerSupplier, sessionId: strin
 			const result = await request<WireScreenshotResponse>(baseUrl, bearer, "POST", `${sessionPath}/screenshot`);
 			return { page: pageFromWire(result.page), data: result.data, mimeType: result.mime_type };
 		},
-		close: () => request<undefined>(baseUrl, bearer, "DELETE", sessionPath),
+		close: () => closeRequest(baseUrl, bearer, sessionPath),
 	};
 }
 
