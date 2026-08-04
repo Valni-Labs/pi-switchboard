@@ -26,6 +26,10 @@ export interface WireOpenSessionResponse {
 	page: WireBrowserPage | null;
 }
 
+export interface WireOpenEphemeralSessionRequest {
+	url?: string;
+}
+
 export type WireBrowserAction =
 	| { action: "navigate"; url: string }
 	| { action: "back" }

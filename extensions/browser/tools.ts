@@ -3,6 +3,7 @@ import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-
 import { remoteBrowserConnector, resolveBaseUrl, resolveBearer } from "./remote.ts";
 import {
 	openConnection,
+	openEphemeralSession,
 	runBrowserAction,
 	takeScreenshot,
 	takeSnapshot,
@@ -58,6 +59,18 @@ export function registerConnectCommand(pi: ExtensionAPI): void {
 }
 
 export function registerBrowserTools(pi: ExtensionAPI): void {
+	pi.registerTool({
+		name: "open_browser_automation",
+		label: "open_browser_automation",
+		description:
+			"Open a browser session to browse the web. No setup, connection, or login required; start here and navigate anywhere. Optionally pass a starting url. Follow with browser_snapshot to see the page, then browser_navigate, browser_click, browser_type, and the other browser_* tools. Use browser_connect instead only when you need a saved, signed-in connection for a specific site.",
+		parameters: Type.Object({
+			url: Type.Optional(Type.String({ description: "Optional URL to open first. Defaults to a blank page." })),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			return toToolResult(await openEphemeralSession(connector(ctx), params.url));
+		},
+	});
 	pi.registerTool({
 		name: "browser_connect",
 		label: "browser_connect",

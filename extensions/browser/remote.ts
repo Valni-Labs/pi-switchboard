@@ -7,6 +7,7 @@ import {
 	type WireActionResponse,
 	type WireBrowserAction,
 	type WireConnectionsResponse,
+	type WireOpenEphemeralSessionRequest,
 	type WireOpenSessionResponse,
 	type WireScreenshotResponse,
 	type WireSnapshotResponse,
@@ -105,6 +106,14 @@ export function remoteBrowserConnector(baseUrl: string, bearer: BearerSupplier):
 				"POST",
 				`${BROWSER_CONNECTIONS_PATH}/${encodeURIComponent(name)}/sessions`,
 			);
+			return {
+				session: remoteSession(baseUrl, bearer, result.session_id),
+				page: result.page === null ? null : pageFromWire(result.page),
+			};
+		},
+		openEphemeral: async (url?: string) => {
+			const body: WireOpenEphemeralSessionRequest = url === undefined ? {} : { url };
+			const result = await request<WireOpenSessionResponse>(baseUrl, bearer, "POST", BROWSER_SESSIONS_PATH, body);
 			return {
 				session: remoteSession(baseUrl, bearer, result.session_id),
 				page: result.page === null ? null : pageFromWire(result.page),

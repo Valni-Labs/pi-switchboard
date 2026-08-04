@@ -74,6 +74,20 @@ test("a missing bearer fails before any request", async () => {
 	assert.equal(recorded.length, 0);
 });
 
+test("openEphemeral posts to the sessions endpoint with an optional url", async () => {
+	respondWith(json(201, { session_id: "bws_e1", page: wirePage }));
+	const opened = await remoteBrowserConnector(BASE_URL, bearer).openEphemeral("https://example.com/start");
+	assert.deepEqual(opened.page, { url: wirePage.url, title: "Home", hasPasswordField: false });
+	assert.equal(recorded[0].url, `${BASE_URL}/v1/browser/sessions`);
+	assert.equal(recorded[0].method, "POST");
+	assert.deepEqual(recorded[0].body, { url: "https://example.com/start" });
+
+	respondWith(json(201, { session_id: "bws_e2", page: wirePage }));
+	await remoteBrowserConnector(BASE_URL, bearer).openEphemeral();
+	assert.equal(recorded[1].url, `${BASE_URL}/v1/browser/sessions`);
+	assert.deepEqual(recorded[1].body, {});
+});
+
 test("open then act posts typed actions to the session endpoint", async () => {
 	respondWith(json(200, { session_id: "bs_1", page: wirePage }));
 	const opened = await remoteBrowserConnector(BASE_URL, bearer).open("clinic");
