@@ -282,6 +282,22 @@ test("closeBrowserSession names an ephemeral session without a connection", asyn
 	assert.match(result.text, /Closed the browser session/);
 });
 
+test("a failed close keeps the session so it can be retried", async () => {
+	let attempts = 0;
+	const session = fakeSession({
+		close: async () => {
+			attempts += 1;
+			if (attempts === 1) throw new Error("network blip");
+		},
+	});
+	await openConnection(fakeConnector(session), "clinic");
+	const first = await closeBrowserSession();
+	assert.match(first.text, /network blip/);
+	const second = await closeBrowserSession();
+	assert.match(second.text, /Closed browser connection "clinic"/);
+	assert.equal(attempts, 2);
+});
+
 test("connecting again closes the previous session", async () => {
 	const first = fakeSession();
 	const second = fakeSession();

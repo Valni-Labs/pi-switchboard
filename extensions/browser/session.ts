@@ -134,12 +134,12 @@ export async function closeActiveBrowser(): Promise<void> {
 export async function closeBrowserSession(): Promise<DriverResult> {
 	const current = active;
 	if (current === null) return { text: NOTHING_TO_CLOSE_MESSAGE, state: null };
-	active = null;
 	try {
 		await current.session.close();
 	} catch (error) {
 		return failure(error);
 	}
+	active = null;
 	const target = current.reauthName === null ? "the browser session" : `browser connection "${current.reauthName}"`;
 	return {
 		text: `Closed ${target}. The session ended and its worker was freed; for a signed-in connection this saved the session so it persists next time.`,
