@@ -123,14 +123,14 @@ test("openConnection surfaces connector errors and leaves no session open", asyn
 });
 
 test("openEphemeralSession opens a connection-less session and reports the page", async () => {
-	const opened = await openEphemeralSession(fakeConnector(fakeSession(), state("https://a.example/home")), undefined);
+	const opened = await openEphemeralSession(fakeConnector(fakeSession(), state("https://a.example/home")));
 	assert.match(opened.text, /Opened a browser session/);
 	assert.match(opened.text, /url: https:\/\/a.example\/home/);
 });
 
 test("an ephemeral session never emits a re-auth message on a login page", async () => {
 	const session = fakeSession({ navigate: async () => state("https://a.example/login", true) });
-	await openEphemeralSession(fakeConnector(session), undefined);
+	await openEphemeralSession(fakeConnector(session));
 	const result = await runBrowserAction("Navigated.", "https://a.example/home", (open) => open.navigate("https://a.example/home"));
 	assert.doesNotMatch(result.text, /looks signed out/);
 	assert.match(result.text, /url: https:\/\/a.example\/login/);
@@ -140,9 +140,25 @@ test("opening an ephemeral session closes the previous session", async () => {
 	const first = fakeSession();
 	const second = fakeSession();
 	await openConnection(fakeConnector(first), "clinic");
-	await openEphemeralSession(fakeConnector(second), undefined);
+	await openEphemeralSession(fakeConnector(second));
 	assert.equal(first.closed, 1);
 	assert.equal(second.closed, 0);
+});
+
+test("openEphemeralSession surfaces connector errors and leaves no session open", async () => {
+	const connector: BrowserConnector = {
+		list: async () => [],
+		open: async () => {
+			throw new Error("unused");
+		},
+		openEphemeral: async () => {
+			throw new Error("Server-side browser connections are not available on Switchboard yet.");
+		},
+	};
+	const result = await openEphemeralSession(connector);
+	assert.match(result.text, /not available on Switchboard yet/);
+	const followUp = await runBrowserAction("Clicked e3.", null, (session) => session.click("e3"));
+	assert.match(followUp.text, /No browser session is open/);
 });
 
 test("every action result carries the page url and title", async () => {

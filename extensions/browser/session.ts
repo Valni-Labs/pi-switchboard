@@ -144,7 +144,7 @@ export async function openConnection(connector: BrowserConnector, name: string):
 	}
 }
 
-export async function openEphemeralSession(connector: BrowserConnector, url: string | undefined): Promise<DriverResult> {
+export async function openEphemeralSession(connector: BrowserConnector, url?: string): Promise<DriverResult> {
 	await closeActiveBrowser();
 	try {
 		const opened = await connector.openEphemeral(url);

@@ -63,7 +63,7 @@ export function registerBrowserTools(pi: ExtensionAPI): void {
 		name: "open_browser_automation",
 		label: "open_browser_automation",
 		description:
-			"Open a browser session to browse the web. No setup, connection, or login required; start here and navigate anywhere. Optionally pass a starting url. Follow with browser_snapshot to see the page, then browser_navigate, browser_click, browser_type, and the other browser_* tools. Use browser_connect instead only when you need a saved, signed-in connection for a specific site.",
+			"Open a browser session to browse the web. No named connection and no site sign-in required; start here and navigate anywhere. Optionally pass a starting url. Follow with browser_snapshot to see the page, then browser_navigate, browser_click, browser_type, and the other browser_* tools. Use browser_connect instead only when you need a saved, signed-in connection for a specific site.",
 		parameters: Type.Object({
 			url: Type.Optional(Type.String({ description: "Optional URL to open first. Defaults to a blank page." })),
 		}),
