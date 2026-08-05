@@ -3,7 +3,7 @@ import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-codin
 import { resolveBaseUrl, resolveSessionId } from "./config.ts";
 import { PROVIDER_ID, spawnedConnectionId } from "./constants.ts";
 
-const TOOLS_PATH = "/v1/tools";
+const MCP_PATH = "/mcp";
 const DISCOVER_TIMEOUT_MS = 10_000;
 const SESSION_HEADER = "X-Switchboard-Session";
 const OPEN_CONNECTION_TOOL = "open_automation_connection";
@@ -41,26 +41,57 @@ export interface AdvertisedTool {
 }
 
 export async function discoverTools(baseUrl: string, bearer: string): Promise<AdvertisedTool[]> {
-	const response = await fetch(`${baseUrl}${TOOLS_PATH}`, {
-		headers: { Authorization: `Bearer ${bearer}` },
-		signal: AbortSignal.timeout(DISCOVER_TIMEOUT_MS),
-	});
+	let response: Response;
+	try {
+		response = await fetch(`${baseUrl}${MCP_PATH}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${bearer}` },
+			body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+			signal: AbortSignal.timeout(DISCOVER_TIMEOUT_MS),
+		});
+	} catch {
+		return [];
+	}
 	if (!response.ok) return [];
-	const body = (await response.json()) as { tools?: AdvertisedTool[] };
-	return Array.isArray(body.tools) ? body.tools : [];
+	const body = (await response.json().catch(() => null)) as {
+		result?: { tools?: Array<{ name?: unknown; description?: unknown; inputSchema?: unknown }> };
+	} | null;
+	const tools = body?.result?.tools;
+	if (!Array.isArray(tools)) return [];
+	const advertised: AdvertisedTool[] = [];
+	for (const tool of tools) {
+		if (typeof tool.name !== "string" || tool.name.length === 0) continue;
+		advertised.push({
+			name: tool.name,
+			description: typeof tool.description === "string" ? tool.description : "",
+			parameters:
+				tool.inputSchema !== null && typeof tool.inputSchema === "object" && !Array.isArray(tool.inputSchema)
+					? (tool.inputSchema as Record<string, unknown>)
+					: {},
+		});
+	}
+	return advertised;
 }
 
 function textResult(text: string, details: unknown): AgentToolResult<unknown> {
 	return { content: [{ type: "text", text }], details };
 }
 
-function errorMessage(result: unknown, name: string, status: number): string {
-	if (result !== null && typeof result === "object" && "error" in result) {
-		const envelope = result as { error: unknown; code?: unknown };
-		const code = typeof envelope.code === "string" ? ` [${envelope.code}]` : "";
-		return `${String(envelope.error)}${code}`;
+export function toAgentContent(content: unknown): AgentToolResult<unknown>["content"] {
+	if (!Array.isArray(content)) return [{ type: "text", text: JSON.stringify(content) }];
+	const items: AgentToolResult<unknown>["content"] = [];
+	for (const raw of content) {
+		if (raw === null || typeof raw !== "object") continue;
+		const item = raw as { type?: unknown; text?: unknown; data?: unknown; mimeType?: unknown };
+		if (item.type === "text" && typeof item.text === "string") {
+			items.push({ type: "text", text: item.text });
+		} else if (item.type === "image" && typeof item.data === "string") {
+			items.push({ type: "image", data: item.data, mimeType: typeof item.mimeType === "string" ? item.mimeType : "image/png" });
+		} else {
+			items.push({ type: "text", text: JSON.stringify(raw) });
+		}
 	}
-	return `Tool ${name} failed (HTTP ${status}).`;
+	return items.length > 0 ? items : [{ type: "text", text: JSON.stringify(content) }];
 }
 
 export async function resolveInvokeToken(ctx: ExtensionContext): Promise<string | null> {
@@ -83,26 +114,35 @@ export function makeProxyExecute(name: string) {
 	): Promise<AgentToolResult<unknown>> => {
 		const token = await resolveInvokeToken(ctx);
 		if (!token) return textResult(`Not signed in to Switchboard — cannot run ${name}. Run /login in pi, or set SWITCHBOARD_API_KEY for key-based use.`, null);
-		const headers: Record<string, string> = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+		const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${token}` };
 		const sessionId = resolveSessionId();
 		if (sessionId !== null) headers[SESSION_HEADER] = sessionId;
 
+		const args = withSpawnedConnectionId(name, withMintedConnectionId(name, params), spawnedConnectionId());
 		let response: Response;
 		try {
-			response = await fetch(`${resolveBaseUrl()}${TOOLS_PATH}/${encodeURIComponent(name)}/invoke`, {
+			response = await fetch(`${resolveBaseUrl()}${MCP_PATH}`, {
 				method: "POST",
 				headers,
-				body: JSON.stringify({ arguments: withSpawnedConnectionId(name, withMintedConnectionId(name, params), spawnedConnectionId()) }),
+				body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
 				signal,
 			});
 		} catch (error) {
 			return textResult(`Could not reach Switchboard to run ${name}: ${String(error)}`, null);
 		}
 
-		const result: unknown = await response.json().catch(() => null);
-		if (!response.ok) {
-			return textResult(errorMessage(result, name, response.status), result);
+		const envelope = (await response.json().catch(() => null)) as {
+			result?: { content?: unknown; isError?: boolean };
+			error?: { message?: unknown; code?: unknown };
+		} | null;
+		if (envelope?.error) {
+			const message = typeof envelope.error.message === "string" ? envelope.error.message : `Tool ${name} failed.`;
+			const code = typeof envelope.error.code === "number" || typeof envelope.error.code === "string" ? ` [${envelope.error.code}]` : "";
+			return textResult(`${message}${code}`, envelope);
 		}
-		return textResult(JSON.stringify(result), result);
+		if (!response.ok || !envelope?.result) {
+			return textResult(`Tool ${name} failed (HTTP ${response.status}).`, envelope);
+		}
+		return { content: toAgentContent(envelope.result.content), details: envelope.result };
 	};
 }

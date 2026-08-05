@@ -1,6 +1,46 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { withSpawnedConnectionId, withMintedConnectionId } from "../toolProxy.ts";
+import { withSpawnedConnectionId, withMintedConnectionId, discoverTools, toAgentContent } from "../toolProxy.ts";
+
+test("discoverTools posts /mcp tools/list and maps inputSchema to parameters", async () => {
+	const original = globalThis.fetch;
+	let captured: { url: string; method: unknown } | null = null;
+	globalThis.fetch = (async (url: string | URL, init: RequestInit) => {
+		captured = { url: String(url), method: (JSON.parse(String(init.body)) as { method: unknown }).method };
+		return new Response(
+			JSON.stringify({ jsonrpc: "2.0", id: 1, result: { tools: [{ name: "browser_navigate", description: "Navigate", inputSchema: { type: "object" } }] } }),
+			{ status: 200 },
+		);
+	}) as typeof fetch;
+	try {
+		const tools = await discoverTools("https://sb", "vst_x");
+		assert.equal(captured?.url, "https://sb/mcp");
+		assert.equal(captured?.method, "tools/list");
+		assert.equal(tools.length, 1);
+		assert.equal(tools[0].name, "browser_navigate");
+		assert.deepEqual(tools[0].parameters, { type: "object" });
+	} finally {
+		globalThis.fetch = original;
+	}
+});
+
+test("toAgentContent maps MCP text and image content through unchanged", () => {
+	assert.deepEqual(
+		toAgentContent([
+			{ type: "text", text: "the page" },
+			{ type: "image", data: "BASE64", mimeType: "image/jpeg" },
+		]),
+		[
+			{ type: "text", text: "the page" },
+			{ type: "image", data: "BASE64", mimeType: "image/jpeg" },
+		],
+	);
+});
+
+test("toAgentContent dumps an unexpected non-array payload instead of dropping it", () => {
+	assert.deepEqual(toAgentContent({ unexpected: true }), [{ type: "text", text: JSON.stringify({ unexpected: true }) }]);
+	assert.deepEqual(toAgentContent([]), [{ type: "text", text: "[]" }]);
+});
 
 test("mints a fresh connection id for open when the caller supplies none", () => {
 	const result = withMintedConnectionId("open_automation_connection", { message: "ping", expects_response: true }) as Record<string, unknown>;
