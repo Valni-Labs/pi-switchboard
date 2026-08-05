@@ -37,6 +37,11 @@ test("toAgentContent maps MCP text and image content through unchanged", () => {
 	);
 });
 
+test("toAgentContent dumps an unexpected non-array payload instead of dropping it", () => {
+	assert.deepEqual(toAgentContent({ unexpected: true }), [{ type: "text", text: JSON.stringify({ unexpected: true }) }]);
+	assert.deepEqual(toAgentContent([]), [{ type: "text", text: "[]" }]);
+});
+
 test("mints a fresh connection id for open when the caller supplies none", () => {
 	const result = withMintedConnectionId("open_automation_connection", { message: "ping", expects_response: true }) as Record<string, unknown>;
 	assert.match(String(result.connection_id), /^con_[0-9a-f]{32}$/);

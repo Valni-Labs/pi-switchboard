@@ -78,7 +78,7 @@ function textResult(text: string, details: unknown): AgentToolResult<unknown> {
 }
 
 export function toAgentContent(content: unknown): AgentToolResult<unknown>["content"] {
-	if (!Array.isArray(content)) return [{ type: "text", text: "" }];
+	if (!Array.isArray(content)) return [{ type: "text", text: JSON.stringify(content) }];
 	const items: AgentToolResult<unknown>["content"] = [];
 	for (const raw of content) {
 		if (raw === null || typeof raw !== "object") continue;
@@ -91,7 +91,7 @@ export function toAgentContent(content: unknown): AgentToolResult<unknown>["cont
 			items.push({ type: "text", text: JSON.stringify(raw) });
 		}
 	}
-	return items.length > 0 ? items : [{ type: "text", text: "" }];
+	return items.length > 0 ? items : [{ type: "text", text: JSON.stringify(content) }];
 }
 
 export async function resolveInvokeToken(ctx: ExtensionContext): Promise<string | null> {
@@ -136,7 +136,9 @@ export function makeProxyExecute(name: string) {
 			error?: { message?: unknown; code?: unknown };
 		} | null;
 		if (envelope?.error) {
-			return textResult(typeof envelope.error.message === "string" ? envelope.error.message : `Tool ${name} failed.`, envelope);
+			const message = typeof envelope.error.message === "string" ? envelope.error.message : `Tool ${name} failed.`;
+			const code = typeof envelope.error.code === "number" || typeof envelope.error.code === "string" ? ` [${envelope.error.code}]` : "";
+			return textResult(`${message}${code}`, envelope);
 		}
 		if (!response.ok || !envelope?.result) {
 			return textResult(`Tool ${name} failed (HTTP ${response.status}).`, envelope);
