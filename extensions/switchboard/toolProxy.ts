@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveBaseUrl, resolveSessionId } from "./config.ts";
 import { PROVIDER_ID, spawnedConnectionId } from "./constants.ts";
@@ -6,23 +5,12 @@ import { PROVIDER_ID, spawnedConnectionId } from "./constants.ts";
 const MCP_PATH = "/mcp";
 const DISCOVER_TIMEOUT_MS = 10_000;
 const SESSION_HEADER = "X-Switchboard-Session";
-const OPEN_CONNECTION_TOOL = "open_automation_connection";
 const CONNECTION_TOOLS = new Set(["send_message", "close_automation_connection"]);
 const CONNECTION_ID_PARAM = "connection_id";
-const CONNECTION_ID_PREFIX = "con_";
-const CONNECTION_ID_BYTES = 16;
 
 function hasConnectionId(record: Record<string, unknown>): boolean {
 	const existing = record[CONNECTION_ID_PARAM];
 	return typeof existing === "string" && existing.trim() !== "";
-}
-
-export function withMintedConnectionId(name: string, params: unknown): unknown {
-	if (name !== OPEN_CONNECTION_TOOL) return params;
-	if (params === null || typeof params !== "object" || Array.isArray(params)) return params;
-	const record = params as Record<string, unknown>;
-	if (hasConnectionId(record)) return params;
-	return { ...record, [CONNECTION_ID_PARAM]: `${CONNECTION_ID_PREFIX}${randomBytes(CONNECTION_ID_BYTES).toString("hex")}` };
 }
 
 export function withSpawnedConnectionId(name: string, params: unknown, connectionId: string | null): unknown {
@@ -118,7 +106,7 @@ export function makeProxyExecute(name: string) {
 		const sessionId = resolveSessionId();
 		if (sessionId !== null) headers[SESSION_HEADER] = sessionId;
 
-		const args = withSpawnedConnectionId(name, withMintedConnectionId(name, params), spawnedConnectionId());
+		const args = withSpawnedConnectionId(name, params, spawnedConnectionId());
 		let response: Response;
 		try {
 			response = await fetch(`${resolveBaseUrl()}${MCP_PATH}`, {
