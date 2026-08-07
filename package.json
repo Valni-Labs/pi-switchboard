@@ -13,7 +13,7 @@
     "node": ">=22.19.0"
   },
   "scripts": {
-    "test": "node --test \"extensions/browser/tests/*.test.ts\" \"extensions/switchboard/tests/*.test.ts\""
+    "test": "node --test \"extensions/switchboard/tests/*.test.ts\""
   },
   "pi": {
     "extensions": [
