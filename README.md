@@ -77,7 +77,7 @@ Some of the systems an agent needs have no API at all: a dental practice portal,
 
 The agent drives the session through a small tool suite. `open_browser_automation` starts an unsigned session, `browser_connect` opens a named signed-in connection, `browser_snapshot` shows the current page as an accessibility tree with element refs, and `browser_navigate`, `browser_click`, `browser_type`, `browser_fill_form`, `browser_select`, `browser_press_key`, `browser_wait_for`, `browser_back`, and `browser_screenshot` do the driving. Every result carries the page URL and title, and a page that unexpectedly shows a login form comes back as a clear needs-re-auth message instead of a silent dead end. You manage the connections on your account from the Switchboard portal.
 
-These tools are served by Switchboard, not shipped in this package: after `/login` they are discovered from your account and run against Switchboard's hosted browser fleet through the `/v1/browser` endpoints, gated by your account's capabilities. pi-switchboard registers whatever the server advertises, so the toolset stays in step with the platform without a client release.
+These tools are served by Switchboard, not shipped in this package: once you are authenticated, whether by `/login` or with a `SWITCHBOARD_API_KEY` set for CI and server use, they are discovered from your account and run against Switchboard's hosted browser fleet through the `/v1/browser` endpoints, gated by your account's capabilities. pi-switchboard registers whatever the server advertises, so the toolset stays in step with the platform without a client release.
 
 ## Not yet covered
 
