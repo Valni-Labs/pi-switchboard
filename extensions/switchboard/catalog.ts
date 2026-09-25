@@ -13,14 +13,22 @@ const MICRO_CENTS_PER_DOLLAR = 100_000_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 const UNKNOWN_CONTEXT_WINDOW = 0;
 
+const AI_PACKAGES = [
+	["@earendil-works", "pi-ai"],
+	["@valni", "ai"],
+] as const;
+
 function findPiAiDist(): string {
 	let current = dirname(realpathSync(process.argv[1]));
 	while (true) {
-		const candidate = join(current, "node_modules", "@earendil-works", "pi-ai", "dist");
-		if (existsSync(candidate)) return candidate;
+		for (const [scope, name] of AI_PACKAGES) {
+			const candidate = join(current, "node_modules", scope, name, "dist");
+			if (existsSync(candidate)) return candidate;
+		}
 		const parent = dirname(current);
 		if (parent === current) {
-			throw new Error("pi-switchboard: cannot locate @earendil-works/pi-ai relative to the pi executable");
+			const names = AI_PACKAGES.map(([scope, name]) => `${scope}/${name}`).join(" or ");
+			throw new Error(`pi-switchboard: cannot locate ${names} relative to the host executable`);
 		}
 		current = parent;
 	}
