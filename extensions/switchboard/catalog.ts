@@ -13,23 +13,40 @@ const MICRO_CENTS_PER_DOLLAR = 100_000_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 const UNKNOWN_CONTEXT_WINDOW = 0;
 
+const AI_PACKAGES = [
+	["@earendil-works", "pi-ai"],
+	["@valni", "ai"],
+] as const;
+
 function findPiAiDist(): string {
 	let current = dirname(realpathSync(process.argv[1]));
 	while (true) {
-		const candidate = join(current, "node_modules", "@earendil-works", "pi-ai", "dist");
-		if (existsSync(candidate)) return candidate;
+		for (const [scope, name] of AI_PACKAGES) {
+			const candidate = join(current, "node_modules", scope, name, "dist");
+			if (existsSync(candidate)) return candidate;
+		}
 		const parent = dirname(current);
 		if (parent === current) {
-			throw new Error("pi-switchboard: cannot locate @earendil-works/pi-ai relative to the pi executable");
+			const names = AI_PACKAGES.map(([scope, name]) => `${scope}/${name}`).join(" or ");
+			throw new Error(`pi-switchboard: cannot locate ${names} relative to the host executable`);
 		}
 		current = parent;
 	}
 }
 
+const REGISTRY_FILES = ["anthropic.models.js", "openai.models.js"];
+const MODULE_NOT_FOUND_CODES = new Set(["ERR_MODULE_NOT_FOUND", "MODULE_NOT_FOUND"]);
+
+function isModuleNotFound(error: unknown): boolean {
+	const code = (error as { code?: unknown }).code;
+	return typeof code === "string" && MODULE_NOT_FOUND_CODES.has(code);
+}
+
 export async function loadRegistryModels(): Promise<Record<string, RegistryModel>> {
 	const distDirectory = findPiAiDist();
 	const registry: Record<string, RegistryModel> = {};
-	for (const file of ["anthropic.models.js", "openai.models.js"]) {
+	const missing: string[] = [];
+	for (const file of REGISTRY_FILES) {
 		let loaded: Record<string, Record<string, RegistryModel>>;
 		try {
 			loaded = (await import(pathToFileURL(join(distDirectory, "providers", file)).href)) as Record<
@@ -37,7 +54,10 @@ export async function loadRegistryModels(): Promise<Record<string, RegistryModel
 				Record<string, RegistryModel>
 			>;
 		} catch (error) {
-			if ((error as { code?: string }).code === "ERR_MODULE_NOT_FOUND") continue;
+			if (isModuleNotFound(error)) {
+				missing.push(file);
+				continue;
+			}
 			throw error;
 		}
 		for (const exported of Object.values(loaded)) {
@@ -46,6 +66,11 @@ export async function loadRegistryModels(): Promise<Record<string, RegistryModel
 				if (model && typeof model === "object" && "id" in model) registry[model.id] = model;
 			}
 		}
+	}
+	if (missing.length === REGISTRY_FILES.length) {
+		console.error(
+			`pi-switchboard: no model registry in ${distDirectory}/providers (${missing.join(", ")}). Models will list without a context window or display name.`,
+		);
 	}
 	return registry;
 }
