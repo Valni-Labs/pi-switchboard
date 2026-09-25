@@ -34,10 +34,19 @@ function findPiAiDist(): string {
 	}
 }
 
+const REGISTRY_FILES = ["anthropic.models.js", "openai.models.js"];
+const MODULE_NOT_FOUND_CODES = new Set(["ERR_MODULE_NOT_FOUND", "MODULE_NOT_FOUND"]);
+
+function isModuleNotFound(error: unknown): boolean {
+	const code = (error as { code?: unknown }).code;
+	return typeof code === "string" && MODULE_NOT_FOUND_CODES.has(code);
+}
+
 export async function loadRegistryModels(): Promise<Record<string, RegistryModel>> {
 	const distDirectory = findPiAiDist();
 	const registry: Record<string, RegistryModel> = {};
-	for (const file of ["anthropic.models.js", "openai.models.js"]) {
+	const missing: string[] = [];
+	for (const file of REGISTRY_FILES) {
 		let loaded: Record<string, Record<string, RegistryModel>>;
 		try {
 			loaded = (await import(pathToFileURL(join(distDirectory, "providers", file)).href)) as Record<
@@ -45,7 +54,10 @@ export async function loadRegistryModels(): Promise<Record<string, RegistryModel
 				Record<string, RegistryModel>
 			>;
 		} catch (error) {
-			if ((error as { code?: string }).code === "ERR_MODULE_NOT_FOUND") continue;
+			if (isModuleNotFound(error)) {
+				missing.push(file);
+				continue;
+			}
 			throw error;
 		}
 		for (const exported of Object.values(loaded)) {
@@ -54,6 +66,11 @@ export async function loadRegistryModels(): Promise<Record<string, RegistryModel
 				if (model && typeof model === "object" && "id" in model) registry[model.id] = model;
 			}
 		}
+	}
+	if (missing.length === REGISTRY_FILES.length) {
+		console.error(
+			`pi-switchboard: no model registry in ${distDirectory}/providers (${missing.join(", ")}). Models will list without a context window or display name.`,
+		);
 	}
 	return registry;
 }

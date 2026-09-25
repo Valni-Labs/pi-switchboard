@@ -40,6 +40,22 @@ test("the host's ai package is found under valni's name", async () => {
 	assert.deepEqual(await loadRegistryModels(), {});
 });
 
+test("an empty registry is reported rather than passed off as success", async () => {
+	clearAiPackages();
+	placeAiPackage("@valni", "ai");
+	const seen: string[] = [];
+	const original = console.error;
+	console.error = (...args: unknown[]) => void seen.push(args.map(String).join(" "));
+	try {
+		assert.deepEqual(await loadRegistryModels(), {});
+	} finally {
+		console.error = original;
+	}
+	assert.equal(seen.length, 1);
+	assert.match(seen[0], /no model registry/u);
+	assert.match(seen[0], /anthropic\.models\.js, openai\.models\.js/u);
+});
+
 test("with neither present the error names both", async () => {
 	clearAiPackages();
 	await assert.rejects(loadRegistryModels(), (error: Error) => {
