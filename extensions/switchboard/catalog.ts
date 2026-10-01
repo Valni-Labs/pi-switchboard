@@ -11,7 +11,7 @@ const MODELS_PATH = "/v1/models";
 const CATALOG_FETCH_TIMEOUT_MS = 10_000;
 const MICRO_CENTS_PER_DOLLAR = 100_000_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
-const UNKNOWN_CONTEXT_WINDOW = 0;
+const DEFAULT_CONTEXT_WINDOW = 128_000;
 
 const AI_PACKAGES = [
 	["@earendil-works", "pi-ai"],
@@ -107,9 +107,9 @@ function toModelConfig(
 		baseUrl: `${resolveBaseUrl()}${SENTINEL_SEGMENT}${kindTag}`,
 		reasoning: supportsReasoning(kindTag, profile) ?? registryModel?.reasoning ?? false,
 		thinkingLevelMap: registryModel?.thinkingLevelMap,
-		input: (profile.vision ?? registryModel?.input.includes("image") ?? false) ? ["text", "image"] : ["text"],
+		input: (profile.vision ?? registryModel?.input?.includes("image") ?? false) ? ["text", "image"] : ["text"],
 		cost: toCost(price, registryModel),
-		contextWindow: registryModel?.contextWindow ?? UNKNOWN_CONTEXT_WINDOW,
+		contextWindow: registryModel?.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
 		maxTokens: profile.maxTokensCeiling ?? registryModel?.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
 		compat:
 			registryModel?.compat ??
@@ -158,6 +158,12 @@ export function buildModelConfigs(catalog: ModelsPage, registry: Record<string, 
 	}
 	if (skipped.length > 0) {
 		console.error(`pi-switchboard: skipped model(s) with an unsupported model kind: ${skipped.join(", ")}`);
+	}
+	const assumed = modelConfigs.filter((config) => config.contextWindow === DEFAULT_CONTEXT_WINDOW).length;
+	if (assumed > 0) {
+		console.error(
+			`pi-switchboard: ${assumed} of ${modelConfigs.length} models carry no context window, so ${DEFAULT_CONTEXT_WINDOW.toLocaleString("en-US")} is assumed. Compaction will be wrong for any model whose real window differs.`,
+		);
 	}
 	return modelConfigs;
 }
