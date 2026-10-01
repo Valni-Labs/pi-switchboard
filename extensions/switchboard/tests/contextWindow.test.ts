@@ -10,10 +10,11 @@ const price = {
 	effective_at: 0,
 };
 
-function catalog(...ids: string[]): ModelsPage {
+function catalog(ids: string[], contextWindows?: Record<string, number>): ModelsPage {
 	return {
 		models: ids.map((id) => ({ id, kind: { openai_generic: { model: id } } })),
 		prices: Object.fromEntries(ids.map((id) => [id, price])),
+		...(contextWindows ? { context_windows: contextWindows } : {}),
 	};
 }
 
@@ -32,7 +33,7 @@ function captureStderr(run: () => void): string[] {
 test("a model the registry does not know never reports a zero context window", () => {
 	let configs: ReturnType<typeof buildModelConfigs> = [];
 	captureStderr(() => {
-		configs = buildModelConfigs(catalog("grok-4.5-xai-sub"), {});
+		configs = buildModelConfigs(catalog(["grok-4.5-xai-sub"]), {});
 	});
 	assert.equal(configs.length, 1);
 	assert.equal(configs[0].contextWindow, 128_000);
@@ -41,7 +42,7 @@ test("a model the registry does not know never reports a zero context window", (
 test("zero would make pi compact on every turn, which is why the default exists", () => {
 	let configs: ReturnType<typeof buildModelConfigs> = [];
 	captureStderr(() => {
-		configs = buildModelConfigs(catalog("grok-4.5-xai-sub"), {});
+		configs = buildModelConfigs(catalog(["grok-4.5-xai-sub"]), {});
 	});
 	const reserveTokens = 16_384;
 	const contextTokens = 50_000;
@@ -50,7 +51,7 @@ test("zero would make pi compact on every turn, which is why the default exists"
 });
 
 test("the assumption is reported rather than made silently", () => {
-	const lines = captureStderr(() => buildModelConfigs(catalog("a", "b"), {}));
+	const lines = captureStderr(() => buildModelConfigs(catalog(["a", "b"]), {}));
 	const notice = lines.find((line) => line.includes("context window"));
 	assert.ok(notice, "expected a notice naming the assumption");
 	assert.match(notice, /2 of 2 models/u);
@@ -61,7 +62,7 @@ test("a registry entry with no input list does not crash the catalog", () => {
 	const registry = { known: { contextWindow: 200_000, maxTokens: 8192 } as unknown as RegistryModel };
 	let configs: ReturnType<typeof buildModelConfigs> = [];
 	captureStderr(() => {
-		configs = buildModelConfigs(catalog("known"), registry);
+		configs = buildModelConfigs(catalog(["known"]), registry);
 	});
 	assert.deepEqual(configs[0].input, ["text"]);
 });
@@ -70,8 +71,36 @@ test("a registry match keeps its real window and is not counted as assumed", () 
 	const registry = { known: { contextWindow: 200_000, maxTokens: 8192, input: ["text"] } as unknown as RegistryModel };
 	let configs: ReturnType<typeof buildModelConfigs> = [];
 	const lines = captureStderr(() => {
-		configs = buildModelConfigs(catalog("known"), registry);
+		configs = buildModelConfigs(catalog(["known"]), registry);
 	});
 	assert.equal(configs[0].contextWindow, 200_000);
 	assert.equal(lines.filter((line) => line.includes("context window")).length, 0);
+});
+
+test("the catalog's own context window wins over the assumption", () => {
+	let configs: ReturnType<typeof buildModelConfigs> = [];
+	const lines = captureStderr(() => {
+		configs = buildModelConfigs(catalog(["grok-4.5-xai-sub"], { "grok-4.5-xai-sub": 3_000_000 }), {});
+	});
+	assert.equal(configs[0].contextWindow, 3_000_000);
+	assert.equal(lines.filter((line) => line.includes("context window")).length, 0);
+});
+
+test("the catalog also beats a registry match, because the catalog is the source of truth", () => {
+	const registry = { known: { contextWindow: 200_000, maxTokens: 8192, input: ["text"] } as unknown as RegistryModel };
+	let configs: ReturnType<typeof buildModelConfigs> = [];
+	captureStderr(() => {
+		configs = buildModelConfigs(catalog(["known"], { known: 1_000_000 }), registry);
+	});
+	assert.equal(configs[0].contextWindow, 1_000_000);
+});
+
+test("a model the catalog omits still falls back, and is still reported", () => {
+	let configs: ReturnType<typeof buildModelConfigs> = [];
+	const lines = captureStderr(() => {
+		configs = buildModelConfigs(catalog(["a", "b"], { a: 500_000 }), {});
+	});
+	assert.equal(configs[0].contextWindow, 500_000);
+	assert.equal(configs[1].contextWindow, 128_000);
+	assert.ok(lines.find((line) => /1 of 2 models/u.test(line)));
 });

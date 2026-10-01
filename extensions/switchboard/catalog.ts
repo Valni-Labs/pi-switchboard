@@ -99,6 +99,7 @@ function toModelConfig(
 	profile: KindProfile,
 	price: ModelRecordPrice | undefined,
 	registryModel: RegistryModel | undefined,
+	catalogContextWindow: number | undefined,
 ) {
 	return {
 		id: record.id,
@@ -109,7 +110,7 @@ function toModelConfig(
 		thinkingLevelMap: registryModel?.thinkingLevelMap,
 		input: (profile.vision ?? registryModel?.input?.includes("image") ?? false) ? ["text", "image"] : ["text"],
 		cost: toCost(price, registryModel),
-		contextWindow: registryModel?.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
+		contextWindow: catalogContextWindow ?? registryModel?.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
 		maxTokens: profile.maxTokensCeiling ?? registryModel?.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
 		compat:
 			registryModel?.compat ??
@@ -154,7 +155,9 @@ export function buildModelConfigs(catalog: ModelsPage, registry: Record<string, 
 			skipped.push(record.id);
 			continue;
 		}
-		modelConfigs.push(toModelConfig(record, kindTag, record.kind[kindTag], catalog.prices[record.id], registry[record.id]));
+		modelConfigs.push(
+			toModelConfig(record, kindTag, record.kind[kindTag], catalog.prices[record.id], registry[record.id], catalog.context_windows?.[record.id]),
+		);
 	}
 	if (skipped.length > 0) {
 		console.error(`pi-switchboard: skipped model(s) with an unsupported model kind: ${skipped.join(", ")}`);
