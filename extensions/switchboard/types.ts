@@ -31,6 +31,7 @@ export interface ModelRecordPrice {
 export interface ModelsPage {
 	models: ModelRecord[];
 	prices: Record<string, ModelRecordPrice>;
+	context_windows?: Record<string, number>;
 }
 
 export type RegistryModel = Model<(typeof KIND_TO_API)[SwitchboardKind]>;

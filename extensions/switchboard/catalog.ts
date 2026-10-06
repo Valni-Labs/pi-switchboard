@@ -11,7 +11,7 @@ const MODELS_PATH = "/v1/models";
 const CATALOG_FETCH_TIMEOUT_MS = 10_000;
 const MICRO_CENTS_PER_DOLLAR = 100_000_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
-const UNKNOWN_CONTEXT_WINDOW = 0;
+const DEFAULT_CONTEXT_WINDOW = 128_000;
 
 const AI_PACKAGES = [
 	["@earendil-works", "pi-ai"],
@@ -99,6 +99,7 @@ function toModelConfig(
 	profile: KindProfile,
 	price: ModelRecordPrice | undefined,
 	registryModel: RegistryModel | undefined,
+	catalogContextWindow: number | undefined,
 ) {
 	return {
 		id: record.id,
@@ -107,9 +108,9 @@ function toModelConfig(
 		baseUrl: `${resolveBaseUrl()}${SENTINEL_SEGMENT}${kindTag}`,
 		reasoning: supportsReasoning(kindTag, profile) ?? registryModel?.reasoning ?? false,
 		thinkingLevelMap: registryModel?.thinkingLevelMap,
-		input: (profile.vision ?? registryModel?.input.includes("image") ?? false) ? ["text", "image"] : ["text"],
+		input: (profile.vision ?? registryModel?.input?.includes("image") ?? false) ? ["text", "image"] : ["text"],
 		cost: toCost(price, registryModel),
-		contextWindow: registryModel?.contextWindow ?? UNKNOWN_CONTEXT_WINDOW,
+		contextWindow: catalogContextWindow ?? registryModel?.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
 		maxTokens: profile.maxTokensCeiling ?? registryModel?.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
 		compat:
 			registryModel?.compat ??
@@ -147,6 +148,7 @@ export function credentialBearer(credential: Credential | undefined): string | n
 export function buildModelConfigs(catalog: ModelsPage, registry: Record<string, RegistryModel>) {
 	const modelConfigs = [];
 	const skipped: string[] = [];
+	let assumed = 0;
 	for (const record of catalog.models) {
 		const tags = Object.keys(record.kind);
 		const kindTag = tags.length === 1 && tags[0] in KIND_TO_API ? (tags[0] as SwitchboardKind) : undefined;
@@ -154,10 +156,19 @@ export function buildModelConfigs(catalog: ModelsPage, registry: Record<string, 
 			skipped.push(record.id);
 			continue;
 		}
-		modelConfigs.push(toModelConfig(record, kindTag, record.kind[kindTag], catalog.prices[record.id], registry[record.id]));
+		const catalogContextWindow = catalog.context_windows?.[record.id];
+		if (catalogContextWindow === undefined && registry[record.id]?.contextWindow === undefined) assumed++;
+		modelConfigs.push(
+			toModelConfig(record, kindTag, record.kind[kindTag], catalog.prices[record.id], registry[record.id], catalogContextWindow),
+		);
 	}
 	if (skipped.length > 0) {
 		console.error(`pi-switchboard: skipped model(s) with an unsupported model kind: ${skipped.join(", ")}`);
+	}
+	if (assumed > 0) {
+		console.error(
+			`pi-switchboard: ${assumed} of ${modelConfigs.length} models carry no context window, so ${DEFAULT_CONTEXT_WINDOW.toLocaleString("en-US")} is assumed. Compaction will be wrong for any model whose real window differs.`,
+		);
 	}
 	return modelConfigs;
 }
