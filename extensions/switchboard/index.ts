@@ -99,22 +99,27 @@ export default async function (pi: ExtensionAPI) {
 		refreshModels: async (context: RefreshModelsContext) => {
 			const bearer = credentialBearer(context.credential);
 			if (!bearer) {
-				await context.store.delete();
+				await context.publish({ persist: null });
 				return [];
 			}
-			const stored = await context.store.read();
 			if (!context.allowNetwork) {
-				return stored ? ([...stored.models] as ReturnType<typeof buildModelConfigs>) : startupModels;
+				return context.stored
+					? ([...context.stored.models] as ReturnType<typeof buildModelConfigs>)
+					: startupModels;
 			}
-			const catalog = await discoverCatalog(baseUrl, bearer);
+			const catalog = await discoverCatalog(baseUrl, bearer, context.signal);
 			const configs = buildModelConfigs(catalog, registry);
-			await context.store.write({
-				models: configs as unknown as ModelsStoreEntry["models"],
-				checkedAt: Math.floor(Date.now() / MILLISECONDS_PER_SECOND),
+			const published = await context.publish({
+				persist: {
+					models: configs as unknown as ModelsStoreEntry["models"],
+					checkedAt: Math.floor(Date.now() / MILLISECONDS_PER_SECOND),
+				},
 			});
+			if (!published) return configs;
 			if (context.credential?.type === "oauth") {
 				try {
-					registerServerTools(pi, await discoverTools(baseUrl, bearer));
+					const tools = await discoverTools(baseUrl, bearer, context.signal);
+					if (!context.signal.aborted) registerServerTools(pi, tools);
 				} catch (error) {
 					console.error("pi-switchboard: server tool discovery failed", error);
 				}

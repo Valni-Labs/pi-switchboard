@@ -28,14 +28,15 @@ export interface AdvertisedTool {
 	version?: string;
 }
 
-export async function discoverTools(baseUrl: string, bearer: string): Promise<AdvertisedTool[]> {
+export async function discoverTools(baseUrl: string, bearer: string, signal?: AbortSignal): Promise<AdvertisedTool[]> {
+	const timeout = AbortSignal.timeout(DISCOVER_TIMEOUT_MS);
 	let response: Response;
 	try {
 		response = await fetch(`${baseUrl}${MCP_PATH}`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${bearer}` },
 			body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
-			signal: AbortSignal.timeout(DISCOVER_TIMEOUT_MS),
+			signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
 		});
 	} catch {
 		return [];

@@ -1,6 +1,6 @@
 {
 	"name": "pi-switchboard",
-	"version": "0.11.2",
+	"version": "0.11.3",
 	"type": "module",
 	"description": "Route the pi coding agent through Switchboard: one prepaid balance, spend controls, and a ledger for every model in the catalog",
 	"keywords": [
@@ -22,9 +22,13 @@
 			"./extensions"
 		]
 	},
+	"peerDependencies": {
+		"@earendil-works/pi-ai": ">=1.0.0",
+		"@earendil-works/pi-coding-agent": ">=1.0.0"
+	},
 	"devDependencies": {
-		"@earendil-works/pi-ai": "0.82.1",
-		"@earendil-works/pi-coding-agent": "0.82.1",
+		"@earendil-works/pi-ai": ">=1.0.0",
+		"@earendil-works/pi-coding-agent": ">=1.0.0",
 		"typescript": "5.9.3"
 	}
 }

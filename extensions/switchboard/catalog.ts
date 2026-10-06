@@ -127,12 +127,13 @@ function toModelConfig(
 	};
 }
 
-export async function discoverCatalog(baseUrl: string, bearer: string): Promise<ModelsPage> {
+export async function discoverCatalog(baseUrl: string, bearer: string, signal?: AbortSignal): Promise<ModelsPage> {
+	const timeout = AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS);
 	let response: Response;
 	try {
 		response = await fetch(`${baseUrl}${MODELS_PATH}`, {
 			headers: { Authorization: `Bearer ${bearer}` },
-			signal: AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS),
+			signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
 		});
 	} catch (error) {
 		if (isAbortError(error)) throw error;
