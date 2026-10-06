@@ -4,9 +4,9 @@ import { withSpawnedConnectionId, discoverTools, toAgentContent } from "../toolP
 
 test("discoverTools posts /mcp tools/list and maps inputSchema to parameters", async () => {
 	const original = globalThis.fetch;
-	let captured: { url: string; method: unknown } | null = null;
+	const captured: { url: string; method: unknown }[] = [];
 	globalThis.fetch = (async (url: string | URL, init: RequestInit) => {
-		captured = { url: String(url), method: (JSON.parse(String(init.body)) as { method: unknown }).method };
+		captured.push({ url: String(url), method: (JSON.parse(String(init.body)) as { method: unknown }).method });
 		return new Response(
 			JSON.stringify({ jsonrpc: "2.0", id: 1, result: { tools: [{ name: "browser_navigate", description: "Navigate", inputSchema: { type: "object" } }] } }),
 			{ status: 200 },
@@ -14,8 +14,9 @@ test("discoverTools posts /mcp tools/list and maps inputSchema to parameters", a
 	}) as typeof fetch;
 	try {
 		const tools = await discoverTools("https://sb", "vst_x");
-		assert.equal(captured?.url, "https://sb/mcp");
-		assert.equal(captured?.method, "tools/list");
+		assert.equal(captured.length, 1);
+		assert.equal(captured[0].url, "https://sb/mcp");
+		assert.equal(captured[0].method, "tools/list");
 		assert.equal(tools.length, 1);
 		assert.equal(tools[0].name, "browser_navigate");
 		assert.deepEqual(tools[0].parameters, { type: "object" });
