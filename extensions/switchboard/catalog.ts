@@ -18,18 +18,20 @@ const AI_PACKAGES = [
 	["@valni", "ai"],
 ] as const;
 
-function findPiAiDist(): string {
-	let current = dirname(realpathSync(process.argv[1]));
+function findPiAiDist(): string | undefined {
+	let current: string;
+	try {
+		current = dirname(realpathSync(process.argv[1]));
+	} catch {
+		return undefined;
+	}
 	while (true) {
 		for (const [scope, name] of AI_PACKAGES) {
 			const candidate = join(current, "node_modules", scope, name, "dist");
 			if (existsSync(candidate)) return candidate;
 		}
 		const parent = dirname(current);
-		if (parent === current) {
-			const names = AI_PACKAGES.map(([scope, name]) => `${scope}/${name}`).join(" or ");
-			throw new Error(`pi-switchboard: cannot locate ${names} relative to the host executable`);
-		}
+		if (parent === current) return undefined;
 		current = parent;
 	}
 }
@@ -45,6 +47,13 @@ function isModuleNotFound(error: unknown): boolean {
 export async function loadRegistryModels(): Promise<Record<string, RegistryModel>> {
 	const distDirectory = findPiAiDist();
 	const registry: Record<string, RegistryModel> = {};
+	if (distDirectory === undefined) {
+		const names = AI_PACKAGES.map(([scope, name]) => `${scope}/${name}`).join(" or ");
+		console.error(
+			`pi-switchboard: no ${names} beside the host executable, so models list without a context window or display name.`,
+		);
+		return registry;
+	}
 	const missing: string[] = [];
 	for (const file of REGISTRY_FILES) {
 		let loaded: Record<string, Record<string, RegistryModel>>;

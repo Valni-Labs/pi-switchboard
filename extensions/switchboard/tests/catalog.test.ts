@@ -56,11 +56,37 @@ test("an empty registry is reported rather than passed off as success", async ()
 	assert.match(seen[0], /anthropic\.models\.js, openai\.models\.js/u);
 });
 
-test("with neither present the error names both", async () => {
+test("with neither present it reports and returns nothing, rather than failing the extension", async () => {
 	clearAiPackages();
-	await assert.rejects(loadRegistryModels(), (error: Error) => {
-		assert.match(error.message, /@earendil-works\/pi-ai/u);
-		assert.match(error.message, /@valni\/ai/u);
-		return true;
-	});
+	const seen: string[] = [];
+	const original = console.error;
+	console.error = (...args: unknown[]) => void seen.push(args.map(String).join(" "));
+	let registry: Record<string, unknown>;
+	try {
+		registry = await loadRegistryModels();
+	} finally {
+		console.error = original;
+	}
+	assert.deepEqual(registry, {});
+	assert.equal(seen.length, 1);
+	assert.match(seen[0], /@earendil-works\/pi-ai/u);
+	assert.match(seen[0], /@valni\/ai/u);
+});
+
+test("a host executable that is not a real path does not kill the extension", async () => {
+	clearAiPackages();
+	const realArgv = process.argv[1];
+	process.argv[1] = "/$bunfs/root/valni";
+	const seen: string[] = [];
+	const original = console.error;
+	console.error = (...args: unknown[]) => void seen.push(args.map(String).join(" "));
+	let registry: Record<string, unknown>;
+	try {
+		registry = await loadRegistryModels();
+	} finally {
+		console.error = original;
+		process.argv[1] = realArgv;
+	}
+	assert.deepEqual(registry, {});
+	assert.equal(seen.length, 1);
 });
