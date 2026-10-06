@@ -22,9 +22,13 @@
 			"./extensions"
 		]
 	},
+	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*"
+	},
 	"devDependencies": {
-		"@earendil-works/pi-ai": "1.0.4",
-		"@earendil-works/pi-coding-agent": "1.0.4",
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
 		"typescript": "5.9.3"
 	}
 }
