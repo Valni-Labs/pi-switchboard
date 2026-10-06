@@ -108,7 +108,7 @@ function toModelConfig(
 		baseUrl: `${resolveBaseUrl()}${SENTINEL_SEGMENT}${kindTag}`,
 		reasoning: supportsReasoning(kindTag, profile) ?? registryModel?.reasoning ?? false,
 		thinkingLevelMap: registryModel?.thinkingLevelMap,
-		input: (profile.vision ?? registryModel?.input?.includes("image") ?? false) ? ["text", "image"] : ["text"],
+		input: ((profile.vision ?? registryModel?.input?.includes("image") ?? false) ? ["text", "image"] : ["text"]) as ("text" | "image")[],
 		cost: toCost(price, registryModel),
 		contextWindow: catalogContextWindow ?? registryModel?.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
 		maxTokens: profile.maxTokensCeiling ?? registryModel?.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,

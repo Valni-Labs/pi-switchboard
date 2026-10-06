@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Typecheck and test
+        run: npm test
+
+      - name: Confirm the extension loads in pi
+        run: |
+          npx pi --no-extensions --extension ./extensions/switchboard/index.ts --list-models 2> >(tee /tmp/pi-stderr.txt >&2) || true
+          # The version line is the reliable signal. pi swallows extension load errors
+          # on --list-models, so its absence is how a broken extension shows up.
+          if ! grep -q "pi-switchboard v" /tmp/pi-stderr.txt; then
+            echo "::error::the extension never ran; it printed no version line"
+            exit 1
+          fi

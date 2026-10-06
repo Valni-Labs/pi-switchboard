@@ -1,2 +1,4 @@
 switchboard.local.json
+.claude/
+.worktrees/
 node_modules/
