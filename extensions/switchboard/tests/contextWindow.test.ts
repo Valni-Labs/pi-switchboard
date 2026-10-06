@@ -104,3 +104,20 @@ test("a model the catalog omits still falls back, and is still reported", () => 
 	assert.equal(configs[1].contextWindow, 128_000);
 	assert.ok(lines.find((line) => /1 of 2 models/u.test(line)));
 });
+
+test("a real window that happens to equal the default is not called an assumption", () => {
+	const registry = {
+		exactly128k: { contextWindow: 128_000, maxTokens: 8192, input: ["text"] } as unknown as RegistryModel,
+	};
+	let configs: ReturnType<typeof buildModelConfigs> = [];
+	const lines = captureStderr(() => {
+		configs = buildModelConfigs(catalog(["exactly128k"]), registry);
+	});
+	assert.equal(configs[0].contextWindow, 128_000);
+	assert.equal(lines.filter((line) => line.includes("context window")).length, 0);
+});
+
+test("a catalog value equal to the default is also a real value", () => {
+	const lines = captureStderr(() => buildModelConfigs(catalog(["m"], { m: 128_000 }), {}));
+	assert.equal(lines.filter((line) => line.includes("context window")).length, 0);
+});

@@ -148,6 +148,7 @@ export function credentialBearer(credential: Credential | undefined): string | n
 export function buildModelConfigs(catalog: ModelsPage, registry: Record<string, RegistryModel>) {
 	const modelConfigs = [];
 	const skipped: string[] = [];
+	let assumed = 0;
 	for (const record of catalog.models) {
 		const tags = Object.keys(record.kind);
 		const kindTag = tags.length === 1 && tags[0] in KIND_TO_API ? (tags[0] as SwitchboardKind) : undefined;
@@ -155,14 +156,15 @@ export function buildModelConfigs(catalog: ModelsPage, registry: Record<string, 
 			skipped.push(record.id);
 			continue;
 		}
+		const catalogContextWindow = catalog.context_windows?.[record.id];
+		if (catalogContextWindow === undefined && registry[record.id]?.contextWindow === undefined) assumed++;
 		modelConfigs.push(
-			toModelConfig(record, kindTag, record.kind[kindTag], catalog.prices[record.id], registry[record.id], catalog.context_windows?.[record.id]),
+			toModelConfig(record, kindTag, record.kind[kindTag], catalog.prices[record.id], registry[record.id], catalogContextWindow),
 		);
 	}
 	if (skipped.length > 0) {
 		console.error(`pi-switchboard: skipped model(s) with an unsupported model kind: ${skipped.join(", ")}`);
 	}
-	const assumed = modelConfigs.filter((config) => config.contextWindow === DEFAULT_CONTEXT_WINDOW).length;
 	if (assumed > 0) {
 		console.error(
 			`pi-switchboard: ${assumed} of ${modelConfigs.length} models carry no context window, so ${DEFAULT_CONTEXT_WINDOW.toLocaleString("en-US")} is assumed. Compaction will be wrong for any model whose real window differs.`,
