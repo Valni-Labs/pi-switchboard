@@ -48,13 +48,11 @@ export async function loadRegistryModels(): Promise<Record<string, RegistryModel
 	const distDirectory = findPiAiDist();
 	const registry: Record<string, RegistryModel> = {};
 	if (distDirectory === undefined) {
-		const names = AI_PACKAGES.map(([scope, name]) => `${scope}/${name}`).join(" or ");
-		console.error(
-			`pi-switchboard: no ${names} beside the host executable, so models list without a context window or display name.`,
-		);
+		// The catalog supplies the context window and the display name, and a
+		// genuinely missing context window is reported precisely in
+		// buildModelConfigs. The registry is only a source of last resort.
 		return registry;
 	}
-	const missing: string[] = [];
 	for (const file of REGISTRY_FILES) {
 		let loaded: Record<string, Record<string, RegistryModel>>;
 		try {
@@ -63,10 +61,9 @@ export async function loadRegistryModels(): Promise<Record<string, RegistryModel
 				Record<string, RegistryModel>
 			>;
 		} catch (error) {
-			if (isModuleNotFound(error)) {
-				missing.push(file);
-				continue;
-			}
+			// A registry file that is not there is not a problem: everything a
+			// user sees first comes from the catalog.
+			if (isModuleNotFound(error)) continue;
 			throw error;
 		}
 		for (const exported of Object.values(loaded)) {
@@ -75,11 +72,6 @@ export async function loadRegistryModels(): Promise<Record<string, RegistryModel
 				if (model && typeof model === "object" && "id" in model) registry[model.id] = model;
 			}
 		}
-	}
-	if (missing.length === REGISTRY_FILES.length) {
-		console.error(
-			`pi-switchboard: no model registry in ${distDirectory}/providers (${missing.join(", ")}). Models will list without a context window or display name.`,
-		);
 	}
 	return registry;
 }
@@ -109,10 +101,11 @@ function toModelConfig(
 	price: ModelRecordPrice | undefined,
 	registryModel: RegistryModel | undefined,
 	catalogContextWindow: number | undefined,
+	catalogDisplayName: string | undefined,
 ) {
 	return {
 		id: record.id,
-		name: registryModel?.name ?? record.id,
+		name: catalogDisplayName ?? registryModel?.name ?? record.id,
 		api: KIND_TO_API[kindTag],
 		baseUrl: `${resolveBaseUrl()}${SENTINEL_SEGMENT}${kindTag}`,
 		reasoning: supportsReasoning(kindTag, profile) ?? registryModel?.reasoning ?? false,
@@ -169,7 +162,15 @@ export function buildModelConfigs(catalog: ModelsPage, registry: Record<string, 
 		const catalogContextWindow = catalog.context_windows?.[record.id];
 		if (catalogContextWindow === undefined && registry[record.id]?.contextWindow === undefined) assumed++;
 		modelConfigs.push(
-			toModelConfig(record, kindTag, record.kind[kindTag], catalog.prices[record.id], registry[record.id], catalogContextWindow),
+			toModelConfig(
+				record,
+				kindTag,
+				record.kind[kindTag],
+				catalog.prices[record.id],
+				registry[record.id],
+				catalogContextWindow,
+				catalog.display_names?.[record.id],
+			),
 		);
 	}
 	if (skipped.length > 0) {

@@ -40,7 +40,7 @@ test("the host's ai package is found under valni's name", async () => {
 	assert.deepEqual(await loadRegistryModels(), {});
 });
 
-test("an empty registry is reported rather than passed off as success", async () => {
+test("a host package with no registry files inside it is not worth saying anything about", async () => {
 	clearAiPackages();
 	placeAiPackage("@valni", "ai");
 	const seen: string[] = [];
@@ -51,9 +51,10 @@ test("an empty registry is reported rather than passed off as success", async ()
 	} finally {
 		console.error = original;
 	}
-	assert.equal(seen.length, 1);
-	assert.match(seen[0], /no model registry/u);
-	assert.match(seen[0], /anthropic\.models\.js, openai\.models\.js/u);
+	// The directory being there changes nothing: the catalog still supplies the
+	// context window and the display name, so an empty registry costs a user
+	// nothing they can see.
+	assert.deepEqual(seen, []);
 });
 
 test("with neither present it reports and returns nothing, rather than failing the extension", async () => {
@@ -68,9 +69,10 @@ test("with neither present it reports and returns nothing, rather than failing t
 		console.error = original;
 	}
 	assert.deepEqual(registry, {});
-	assert.equal(seen.length, 1);
-	assert.match(seen[0], /@earendil-works\/pi-ai/u);
-	assert.match(seen[0], /@valni\/ai/u);
+	// Nothing is said, because nothing is lost: the catalog carries the context
+	// window and the display name, and a genuinely absent context window is
+	// reported precisely by buildModelConfigs.
+	assert.deepEqual(seen, []);
 });
 
 test("a host executable that is not a real path does not kill the extension", async () => {
@@ -88,5 +90,5 @@ test("a host executable that is not a real path does not kill the extension", as
 		process.argv[1] = realArgv;
 	}
 	assert.deepEqual(registry, {});
-	assert.equal(seen.length, 1);
+	assert.deepEqual(seen, []);
 });

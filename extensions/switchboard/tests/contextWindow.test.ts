@@ -121,3 +121,28 @@ test("a catalog value equal to the default is also a real value", () => {
 	const lines = captureStderr(() => buildModelConfigs(catalog(["m"], { m: 128_000 }), {}));
 	assert.equal(lines.filter((line) => line.includes("context window")).length, 0);
 });
+
+test("a model is named the way the catalog names it", () => {
+	const configs = buildModelConfigs(
+		{
+			models: [{ id: "kimi-k3-coding-sub", access_tier: "pro", kind: { anthropic: { kind: "anthropic", model: "k3" } } }],
+			prices: {},
+			context_windows: { "kimi-k3-coding-sub": 1_048_576 },
+			display_names: { "kimi-k3-coding-sub": "Kimi K3 (coding subscription)" },
+		} as never,
+		{},
+	);
+	assert.equal(configs[0].name, "Kimi K3 (coding subscription)");
+});
+
+test("without a catalog name a model falls back to its id, not to nothing", () => {
+	const configs = buildModelConfigs(
+		{
+			models: [{ id: "kimi-k3-coding-sub", access_tier: "pro", kind: { anthropic: { kind: "anthropic", model: "k3" } } }],
+			prices: {},
+			context_windows: { "kimi-k3-coding-sub": 1_048_576 },
+		} as never,
+		{},
+	);
+	assert.equal(configs[0].name, "kimi-k3-coding-sub");
+});
