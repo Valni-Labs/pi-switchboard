@@ -31,7 +31,10 @@ export interface ModelRecordPrice {
 export interface ModelsPage {
 	models: ModelRecord[];
 	prices: Record<string, ModelRecordPrice>;
+	/** Real context window per model id, from the catalog. */
 	context_windows?: Record<string, number>;
+	/** Human-readable name per model id, from the catalog. */
+	display_names?: Record<string, string>;
 }
 
 export type RegistryModel = Model<(typeof KIND_TO_API)[SwitchboardKind]>;
