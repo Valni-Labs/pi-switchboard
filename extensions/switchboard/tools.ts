@@ -1,4 +1,6 @@
-import { Type } from "@earendil-works/pi-ai";
+// typebox directly, not through a harness package: this extension runs in
+// more than one host and must not name any of them at runtime.
+import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type AdvertisedTool, makeProxyExecute } from "./toolProxy.ts";
 
