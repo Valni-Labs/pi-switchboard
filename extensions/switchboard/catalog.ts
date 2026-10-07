@@ -53,7 +53,6 @@ export async function loadRegistryModels(): Promise<Record<string, RegistryModel
 		// buildModelConfigs. The registry is only a source of last resort.
 		return registry;
 	}
-	const missing: string[] = [];
 	for (const file of REGISTRY_FILES) {
 		let loaded: Record<string, Record<string, RegistryModel>>;
 		try {
@@ -62,10 +61,9 @@ export async function loadRegistryModels(): Promise<Record<string, RegistryModel
 				Record<string, RegistryModel>
 			>;
 		} catch (error) {
-			if (isModuleNotFound(error)) {
-				missing.push(file);
-				continue;
-			}
+			// A registry file that is not there is not a problem: everything a
+			// user sees first comes from the catalog.
+			if (isModuleNotFound(error)) continue;
 			throw error;
 		}
 		for (const exported of Object.values(loaded)) {
@@ -74,11 +72,6 @@ export async function loadRegistryModels(): Promise<Record<string, RegistryModel
 				if (model && typeof model === "object" && "id" in model) registry[model.id] = model;
 			}
 		}
-	}
-	if (missing.length === REGISTRY_FILES.length) {
-		console.error(
-			`pi-switchboard: no model registry in ${distDirectory}/providers (${missing.join(", ")}). Models will list without a context window or display name.`,
-		);
 	}
 	return registry;
 }
