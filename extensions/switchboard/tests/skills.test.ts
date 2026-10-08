@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { discoverSkills, materializeSkills } from "../skills.ts";
+import { discoverSkills, materializeSkills, materializeSkillsOrNone } from "../skills.ts";
 
 const SWITCHBOARD_SKILL = {
 	name: "switchboard",
@@ -98,5 +98,31 @@ test("materializeSkills never writes outside the skill folder", () => {
 		assert.equal(readFileSync(join(root, "evil", "SKILL.md"), "utf8"), "y");
 	} finally {
 		rmSync(parent, { recursive: true, force: true });
+	}
+});
+
+test("materializeSkills keeps the files private to the current user", () => {
+	const root = join(mkdtempSync(join(tmpdir(), "swb-skills-test-")), "skills");
+	try {
+		materializeSkills([SWITCHBOARD_SKILL], root);
+		assert.equal(statSync(root).mode & 0o777, 0o700);
+		assert.equal(statSync(join(root, "switchboard", "references")).mode & 0o777, 0o700);
+		assert.equal(statSync(join(root, "switchboard", "SKILL.md")).mode & 0o777, 0o600);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("materializeSkillsOrNone cleans up and serves nothing when a write fails", () => {
+	const root = join(mkdtempSync(join(tmpdir(), "swb-skills-test-")), "skills");
+	try {
+		const paths = materializeSkillsOrNone(
+			[SWITCHBOARD_SKILL, { name: "broken", description: "", files: [{ path: "bad\u0000name.md", content: "x" }] }],
+			root,
+		);
+		assert.deepEqual(paths, []);
+		assert.equal(existsSync(root), false);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
 	}
 });

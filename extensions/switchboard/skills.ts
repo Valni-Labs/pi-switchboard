@@ -8,6 +8,8 @@ import { resolveInvokeToken } from "./toolProxy.ts";
 const SKILLS_PATH = "/v1/skills";
 const DISCOVER_TIMEOUT_MS = 10_000;
 const SKILL_NAME = /^[a-z0-9][a-z0-9-]*$/u;
+const PRIVATE_DIRECTORY_MODE = 0o700;
+const PRIVATE_FILE_MODE = 0o600;
 
 export const SKILLS_DIRECTORY = join(tmpdir(), `switchboard-skills-${process.pid}`);
 
@@ -62,18 +64,29 @@ export async function discoverSkills(baseUrl: string, bearer: string, signal?: A
 
 export function materializeSkills(skills: ServedSkill[], root: string): string[] {
 	rmSync(root, { recursive: true, force: true });
+	mkdirSync(root, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
 	const skillDirectories: string[] = [];
 	for (const skill of skills) {
 		const skillDirectory = join(root, skill.name);
 		for (const file of skill.files) {
 			const target = resolve(skillDirectory, file.path);
 			if (!target.startsWith(`${skillDirectory}${sep}`)) continue;
-			mkdirSync(dirname(target), { recursive: true });
-			writeFileSync(target, file.content);
+			mkdirSync(dirname(target), { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+			writeFileSync(target, file.content, { mode: PRIVATE_FILE_MODE });
 		}
 		skillDirectories.push(skillDirectory);
 	}
 	return skillDirectories;
+}
+
+export function materializeSkillsOrNone(skills: ServedSkill[], root: string): string[] {
+	try {
+		return materializeSkills(skills, root);
+	} catch (error) {
+		console.error("pi-switchboard: could not write served skills", error);
+		rmSync(root, { recursive: true, force: true });
+		return [];
+	}
 }
 
 export function registerServedSkills(pi: ExtensionAPI): void {
@@ -84,7 +97,7 @@ export function registerServedSkills(pi: ExtensionAPI): void {
 			return {};
 		}
 		const skills = await discoverSkills(resolveBaseUrl(), token);
-		return { skillPaths: materializeSkills(skills, SKILLS_DIRECTORY) };
+		return { skillPaths: materializeSkillsOrNone(skills, SKILLS_DIRECTORY) };
 	});
 	pi.on("session_shutdown", () => {
 		rmSync(SKILLS_DIRECTORY, { recursive: true, force: true });
