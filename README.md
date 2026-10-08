@@ -79,6 +79,10 @@ The agent drives the session through a small tool suite. `open_browser_automatio
 
 These tools are served by Switchboard, not shipped in this package: once you are authenticated, whether by `/login` or with a `SWITCHBOARD_API_KEY` set for CI and server use, they are discovered from your account and run against Switchboard's hosted browser fleet through the `/v1/browser` endpoints, gated by your account's capabilities. pi-switchboard registers whatever the server advertises, so the toolset stays in step with the platform without a client release.
 
+## Skills
+
+Once you are signed in, pi-switchboard loads the skills your Switchboard account enables for you, next to your local skills. Your organization offers skills and you adopt the ones you want in the Switchboard portal; by default you get guides to Switchboard and the Valni CLI. Signed out, no Switchboard skills load. After you sign in or change skills in the portal, run `/reload`.
+
 ## Not yet covered
 
 - Context-overflow error normalization for pi's auto-compaction (unknown ids have no context window, so pi cannot preemptively compact for them)
