@@ -19,6 +19,7 @@ import { clearPendingAsks, consumePendingAsk, installEnvelopeFetch, onSteer } fr
 import { startSessionStream, stopSessionStream } from "./sessionStream.ts";
 import { registerParticipantFraming } from "./participant.ts";
 import { registerServedSkills } from "./skills.ts";
+import { registerStartupNotice } from "./startup.ts";
 import { discoverTools } from "./toolProxy.ts";
 import { registerServerTools } from "./tools.ts";
 
@@ -56,6 +57,7 @@ export default async function (pi: ExtensionAPI) {
 	installEnvelopeFetch();
 	registerParticipantFraming(pi);
 	registerServedSkills(pi);
+	registerStartupNotice(pi);
 	onSteer((steer, deliverAs) => {
 		pi.sendUserMessage(steer, { deliverAs });
 	});
