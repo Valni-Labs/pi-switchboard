@@ -83,6 +83,8 @@ These tools are served by Switchboard, not shipped in this package: once you are
 
 Once you are signed in, pi-switchboard loads the skills your Switchboard account enables for you, next to your local skills. Your organization offers skills and you adopt the ones you want in the Switchboard portal; by default you get guides to Switchboard and the Valni CLI. Signed out, no Switchboard skills load. After you sign in or change skills in the portal, run `/reload`.
 
+At startup, pi-switchboard shows who is signed in and links to the portal, where you configure skills, tools, and permissions. The note clears when you send your first message.
+
 ## Not yet covered
 
 - Context-overflow error normalization for pi's auto-compaction (unknown ids have no context window, so pi cannot preemptively compact for them)

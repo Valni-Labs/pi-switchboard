@@ -16,6 +16,7 @@ interface DeviceTokenResponse {
 	refresh_token?: string;
 	expires_in?: number;
 	end_user_id?: string;
+	email?: string | null;
 	error?: string;
 }
 
@@ -49,6 +50,7 @@ function toCredentials(token: DeviceTokenResponse): OAuthCredentials {
 		expires: Date.now() + token.expires_in * MILLISECONDS_PER_SECOND,
 		endUserId: token.end_user_id,
 	};
+	if (typeof token.email === "string" && token.email.length > 0) credentials.email = token.email;
 	rememberSessionCredentials(credentials);
 	return credentials;
 }
