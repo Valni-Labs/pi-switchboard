@@ -1,0 +1,22 @@
+name: Dependency pins
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  no-bare-commit-pins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Git dependencies name a release tag or main, never a bare commit
+        run: |
+          pattern='(git\+|github:|git://|ssh://|\.git)[^"'"'"' ]*[#@][0-9a-f]{7,40}([^0-9A-Za-z_.-]|$)|revision: *"[0-9a-f]{7,40}"|\.revision\("[0-9a-f]{7,40}"\)'
+          if git ls-files -z -- '*package.json' '*Package.swift' '*pyproject.toml' '*requirements*.txt' | xargs -0 -r grep -nE "$pattern"; then
+            echo "::error::A git dependency points at a bare commit. Point it at a release tag (e.g. #v1.2.3) or main."
+            exit 1
+          fi
