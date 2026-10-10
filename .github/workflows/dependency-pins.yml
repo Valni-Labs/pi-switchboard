@@ -15,16 +15,24 @@ jobs:
       - uses: actions/checkout@v4
       - name: Git dependencies name a release tag or main, never a bare commit
         run: |
-          pattern='(git\+|github:|git://|ssh://|\.git)[^"'"'"' ]*[#@][0-9a-f]{7,40}([^0-9A-Za-z_.-]|$)|revision: *"[0-9a-f]{7,40}"|\.revision\("[0-9a-f]{7,40}"\)'
-          set +e
-          git grep -nE "$pattern" -- '*package.json' '*Package.swift' '*pyproject.toml' '*requirements*.txt'
-          status=$?
-          set -e
-          if [ "$status" -eq 0 ]; then
+          hex='[0-9a-fA-F]{7,40}'
+          found=0
+          scan() {
+            local pattern=$1
+            shift
+            local status=0
+            git grep -nIE "$pattern" -- "$@" || status=$?
+            if [ "$status" -eq 0 ]; then
+              found=1
+            elif [ "$status" -ne 1 ]; then
+              echo "::error::The dependency pin check could not run (git grep exit $status)."
+              exit "$status"
+            fi
+          }
+          scan "\"[^\"]*[/:][^\"]*#${hex}\"" '*package.json'
+          scan "git\+[^\"' ]*@${hex}([^0-9A-Za-z_.-]|$)|(^|[^A-Za-z_])(rev|commit) *= *[\"']${hex}[\"']" '*pyproject.toml' '*requirements*.txt'
+          scan "revision: *\"${hex}\"|\.revision\(\"${hex}\"\)" '*Package.swift'
+          if [ "$found" -eq 1 ]; then
             echo "::error::A git dependency points at a bare commit. Point it at a release tag (e.g. #v1.2.3) or main."
             exit 1
-          fi
-          if [ "$status" -ne 1 ]; then
-            echo "::error::The dependency pin check could not run (git grep exit $status)."
-            exit "$status"
           fi
