@@ -21,7 +21,7 @@ import { registerParticipantFraming } from "./participant.ts";
 import { registerServedSkills } from "./skills.ts";
 import { registerStartupNotice } from "./startup.ts";
 import { discoverTools } from "./toolProxy.ts";
-import { registerServerTools } from "./tools.ts";
+import { registerServedTools, registerServerTools } from "./tools.ts";
 
 const PROVIDER_NAME = "Switchboard";
 const APPROVAL_DIALOG_TITLE = "Switchboard approval required";
@@ -42,21 +42,12 @@ export default async function (pi: ExtensionAPI) {
 	const environmentKey = process.env.SWITCHBOARD_API_KEY;
 	let startupModels: ReturnType<typeof buildModelConfigs> = [];
 	if (environmentKey) {
-		const [catalog, tools] = await Promise.allSettled([
-			discoverCatalog(baseUrl, environmentKey),
-			discoverTools(baseUrl, environmentKey),
-		]);
-		if (catalog.status === "rejected") throw catalog.reason;
-		startupModels = buildModelConfigs(catalog.value, registry);
-		if (tools.status === "fulfilled") {
-			registerServerTools(pi, tools.value);
-		} else {
-			console.error("pi-switchboard: server tool discovery failed for key mode", tools.reason);
-		}
+		startupModels = buildModelConfigs(await discoverCatalog(baseUrl, environmentKey), registry);
 	}
 	installEnvelopeFetch();
 	registerParticipantFraming(pi);
 	registerServedSkills(pi);
+	registerServedTools(pi);
 	registerStartupNotice(pi);
 	onSteer((steer, deliverAs) => {
 		pi.sendUserMessage(steer, { deliverAs });
