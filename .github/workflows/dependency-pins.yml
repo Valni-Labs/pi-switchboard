@@ -1,0 +1,38 @@
+name: Dependency pins
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  no-bare-commit-pins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Git dependencies name a release tag or main, never a bare commit
+        run: |
+          hex='[0-9a-fA-F]{7,40}'
+          found=0
+          scan() {
+            local pattern=$1
+            shift
+            local status=0
+            git grep -nIE "$pattern" -- "$@" || status=$?
+            if [ "$status" -eq 0 ]; then
+              found=1
+            elif [ "$status" -ne 1 ]; then
+              echo "::error::The dependency pin check could not run (git grep exit $status)."
+              exit "$status"
+            fi
+          }
+          scan "\"[^\"]*[/:][^\"]*#${hex}\"" '*package.json'
+          scan "git\+[^\"' ]*@${hex}([^0-9A-Za-z_.-]|$)|(^|[^A-Za-z_])(rev|commit) *= *[\"']${hex}[\"']" '*pyproject.toml' '*requirements*.txt'
+          scan "revision: *\"${hex}\"|\.revision\(\"${hex}\"\)" '*Package.swift'
+          if [ "$found" -eq 1 ]; then
+            echo "::error::A git dependency points at a bare commit. Point it at a release tag (e.g. #v1.2.3) or main."
+            exit 1
+          fi
