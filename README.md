@@ -71,13 +71,19 @@ Tested against pi v0.80.x. The extension reads pi's bundled model registry for c
 
 Switchboard errors are translated for the person at the keyboard, not the API developer, and wrapped in each provider's native error shape so pi displays them as plain messages. Account conditions come with their fix: a wrong key says to log in to Switchboard and get a key, an empty balance says to top up, spend and rate limits point at the portal, a disallowed model says to switch models. Provider outages say to retry or switch models, and anything internal to Switchboard says so and asks for the request id. Every message ends with the code and request id for support, e.g. `Out of Switchboard credit. Top up at https://valni.app/platform and retry. [SWB-1007, request rqe_...]`.
 
-## Browser connections (preview)
+## Browser tools
 
-Some of the systems an agent needs have no API at all: a dental practice portal, a supplier back office, a government form. A browser connection gives the agent a persistent, signed-in browser session for one of those sites, hosted with your Switchboard account. You sign in once from the portal, and from then on the agent can open the session and click, type, and read pages on your behalf. No password is ever stored on your machine or in pi; the hosted browser session is the credential.
+Some of the systems an agent needs have no API at all: a dental practice portal, a supplier back office, a government form. The browser tools let the agent use those sites as you, in a Chrome window on your own Mac that you can watch.
 
-The agent drives the session through a small tool suite. `open_browser_automation` starts an unsigned session, `browser_connect` opens a named signed-in connection, `browser_snapshot` shows the current page as an accessibility tree with element refs, and `browser_navigate`, `browser_click`, `browser_type`, `browser_fill_form`, `browser_select`, `browser_press_key`, `browser_wait_for`, `browser_back`, and `browser_screenshot` do the driving. Every result carries the page URL and title, and a page that unexpectedly shows a login form comes back as a clear needs-re-auth message instead of a silent dead end. You manage the connections on your account from the Switchboard portal.
+`open_browser_automation` opens the window, `browser_snapshot` shows the current page as an accessibility tree with element refs, and `browser_navigate`, `browser_click`, `browser_type`, `browser_fill_form`, `browser_select`, `browser_press_key`, `browser_wait_for`, `browser_back`, and `browser_screenshot` do the driving. Sign in to a site once in that window and the sign-in is kept. When a site shows a CAPTCHA, the agent stops and asks you to solve it.
 
-These tools are served by Switchboard, not shipped in this package: once you are authenticated, whether by `/login` or with a `SWITCHBOARD_API_KEY` set for CI and server use, they are discovered from your account and run against Switchboard's hosted browser fleet through the `/v1/browser` endpoints, gated by your account's capabilities. pi-switchboard registers whatever the server advertises, so the toolset stays in step with the platform without a client release.
+Switchboard defines these tools and your account decides who gets them, but they run on your computer, not on Switchboard. Switchboard marks them as local, and pi-switchboard hands each call to the [browser-local](https://github.com/Valni-Labs/browser-local) extension on the `valni:local-tool` event channel. Install it once:
+
+```
+pi install https://github.com/Valni-Labs/browser-local
+```
+
+Without it, the browser tools answer with that install command.
 
 ## Skills
 

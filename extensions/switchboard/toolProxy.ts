@@ -1,6 +1,7 @@
 import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveBaseUrl, resolveSessionId } from "./config.ts";
 import { PROVIDER_ID, spawnedConnectionId } from "./constants.ts";
+import { executionOf, type ToolExecution } from "./localTools.ts";
 
 const MCP_PATH = "/mcp";
 const DISCOVER_TIMEOUT_MS = 10_000;
@@ -25,6 +26,7 @@ export interface AdvertisedTool {
 	name: string;
 	description: string;
 	parameters: Record<string, unknown>;
+	execution: ToolExecution;
 	version?: string;
 }
 
@@ -43,7 +45,7 @@ export async function discoverTools(baseUrl: string, bearer: string, signal?: Ab
 	}
 	if (!response.ok) return [];
 	const body = (await response.json().catch(() => null)) as {
-		result?: { tools?: Array<{ name?: unknown; description?: unknown; inputSchema?: unknown }> };
+		result?: { tools?: Array<{ name?: unknown; description?: unknown; inputSchema?: unknown; _meta?: unknown }> };
 	} | null;
 	const tools = body?.result?.tools;
 	if (!Array.isArray(tools)) return [];
@@ -57,6 +59,7 @@ export async function discoverTools(baseUrl: string, bearer: string, signal?: Ab
 				tool.inputSchema !== null && typeof tool.inputSchema === "object" && !Array.isArray(tool.inputSchema)
 					? (tool.inputSchema as Record<string, unknown>)
 					: {},
+			execution: executionOf(tool._meta),
 		});
 	}
 	return advertised;

@@ -3,6 +3,7 @@
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveBaseUrl } from "./config.ts";
+import { LOCAL_EXECUTION, makeLocalExecute } from "./localTools.ts";
 import { type AdvertisedTool, discoverTools, makeProxyExecute, resolveInvokeToken } from "./toolProxy.ts";
 
 export function registerServerTools(pi: ExtensionAPI, tools: AdvertisedTool[]): void {
@@ -13,7 +14,9 @@ export function registerServerTools(pi: ExtensionAPI, tools: AdvertisedTool[]): 
 			label: tool.name,
 			description: tool.description,
 			parameters: Type.Unsafe(tool.parameters),
-			execute: makeProxyExecute(tool.name),
+			...(tool.execution === LOCAL_EXECUTION
+				? { executionMode: "sequential" as const, execute: makeLocalExecute(pi.events, tool.name) }
+				: { execute: makeProxyExecute(tool.name) }),
 		});
 	}
 }
