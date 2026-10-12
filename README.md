@@ -85,6 +85,16 @@ pi install https://github.com/Valni-Labs/browser-local
 
 Without it, the browser tools answer with that install command.
 
+## Automation connections
+
+`open_automation_connection` starts another agent session on your computer and gives it a task; `send_message` steers it and `close_automation_connection` ends it. Its replies arrive in your session as messages on that connection. Like the browser tools, these run locally: the [bubbins-spawn](https://github.com/Valni-Labs/bubbins-spawn) extension runs each connection as a session of the same CLI, in its own git worktree. Install it once:
+
+```
+pi install https://github.com/Valni-Labs/bubbins-spawn
+```
+
+Switchboard names the extension that runs each local tool, so a missing one answers with its own install command.
+
 ## Skills
 
 Once you are signed in, pi-switchboard loads the skills your Switchboard account enables for you, next to your local skills. Your organization offers skills and you adopt the ones you want in the Switchboard portal; by default you get guides to Switchboard and the Valni CLI. Signed out, no Switchboard skills load. After you sign in or change skills in the portal, run `/reload`.

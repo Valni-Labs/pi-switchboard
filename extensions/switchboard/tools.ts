@@ -15,7 +15,7 @@ export function registerServerTools(pi: ExtensionAPI, tools: AdvertisedTool[]): 
 			description: tool.description,
 			parameters: Type.Unsafe(tool.parameters),
 			...(tool.execution === LOCAL_EXECUTION
-				? { executionMode: "sequential" as const, execute: makeLocalExecute(pi.events, tool.name) }
+				? { executionMode: "sequential" as const, execute: makeLocalExecute(pi.events, tool.name, tool.extension) }
 				: { execute: makeProxyExecute(tool.name) }),
 		});
 	}
