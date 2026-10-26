@@ -342,8 +342,64 @@ export async function connectModelSubscription(access: string, callbacks: OAuthL
 	await connectSubscription(access, picked, provider?.label ?? picked, callbacks);
 }
 
+interface EmailProvider {
+	id: string;
+	label: string;
+	authorizationEndpoint: string;
+	tokenEndpoint: string;
+	scope: string;
+	clientId: string;
+	configured: boolean;
+}
+
+async function listEmailProviders(access: string): Promise<EmailProvider[]> {
+	const response = await apiFetch(access, "/v1/connections/email-providers");
+	if (!response.ok) throw new Error(await describeFailure(response));
+	const body = (await response.json()) as { providers?: EmailProvider[] };
+	return Array.isArray(body.providers) ? body.providers : [];
+}
+
+async function connectBuiltinEmail(access: string, provider: EmailProvider, callbacks: OAuthLoginCallbacks): Promise<void> {
+	if (!provider.configured) {
+		throw new Error(`${provider.label} is not configured yet. Set the OAuth client on Switchboard, then run /login again.`);
+	}
+	const app: OauthApp = {
+		id: provider.id,
+		name: provider.label,
+		providerSlug: provider.id,
+		authorizationEndpoint: provider.authorizationEndpoint,
+		tokenEndpoint: provider.tokenEndpoint,
+		clientId: provider.clientId,
+		scope: provider.scope,
+	};
+	const authorization = await loopbackAuthorize(app, callbacks);
+	const response = await apiFetch(access, `/v1/connections/email-providers/${encodeURIComponent(provider.id)}/connect`, {
+		method: "POST",
+		body: {
+			code: authorization.code,
+			redirect_uri: authorization.redirectUri,
+			code_verifier: authorization.verifier,
+		},
+	});
+	if (!response.ok) throw new Error(await describeFailure(response));
+	callbacks.onProgress?.(`Connected ${provider.label}`);
+}
+
 export async function connectEmail(access: string, callbacks: OAuthLoginCallbacks): Promise<void> {
-	await connectCustomOauth(access, callbacks);
+	const providers = await listEmailProviders(access);
+	const options = [
+		...providers.map((provider) => ({ id: provider.id, label: provider.label })),
+		{ id: NEW_APP, label: "+ Register a new email connection" },
+	];
+	const picked = await callbacks.onSelect({ message: "Which email account?", options });
+	if (picked === undefined) throw new Error("Connection cancelled");
+	if (picked === NEW_APP) {
+		await connectCustomOauth(access, callbacks);
+		return;
+	}
+	const provider = providers.find((candidate) => candidate.id === picked);
+	if (!provider) throw new Error("Connection cancelled");
+	await connectBuiltinEmail(access, provider, callbacks);
 }
 
 const MENU_ACCOUNT = "switchboard-account";
