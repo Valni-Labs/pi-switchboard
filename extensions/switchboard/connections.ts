@@ -7,11 +7,7 @@ import { recallSessionCredentials, resolveBaseUrl } from "./config.ts";
 import { deviceLogin, openInBrowser, sleep } from "./device-auth.ts";
 import { describeFailure } from "./errors.ts";
 
-const MENU_SIGN_IN = "switchboard-sign-in";
-const MENU_SUBSCRIPTIONS = "subscriptions";
-const MENU_ADD_OAUTH = "add-oauth";
 const NEW_APP = "register-new-app";
-const SUBSCRIPTION_PREFIX = "sub:";
 const CALLBACK_PATH = "/callback";
 const LOOPBACK_TIMEOUT_MS = 300_000;
 const DEFAULT_POLL_INTERVAL_SECONDS = 5;
@@ -283,7 +279,7 @@ async function connectCustomOauth(access: string, callbacks: OAuthLoginCallbacks
 	callbacks.onProgress?.(`Connected ${app.name}`);
 }
 
-async function connectSubscription(access: string, providerId: string, label: string, callbacks: OAuthLoginCallbacks): Promise<void> {
+export async function connectSubscription(access: string, providerId: string, label: string, callbacks: OAuthLoginCallbacks): Promise<void> {
 	const startResponse = await apiFetch(access, `/v1/connections/subscription/${encodeURIComponent(providerId)}/start`, { method: "POST" });
 	if (!startResponse.ok) throw new Error(await describeFailure(startResponse));
 	const start = (await startResponse.json()) as {
@@ -325,62 +321,105 @@ async function connectSubscription(access: string, providerId: string, label: st
 	throw new Error("The connect code expired. Run /login to try again.");
 }
 
-async function ensureSession(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
+export async function requireSwitchboardSession(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
 	const remembered = recallSessionCredentials();
 	if (remembered !== null) return remembered;
 	callbacks.onProgress?.("Sign in to Switchboard first");
 	return deviceLogin(callbacks);
 }
 
-export async function switchboardLogin(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
-	const remembered = recallSessionCredentials();
-	let subscriptionProviders: SubscriptionProvider[] = [];
-	if (remembered !== null) {
-		try {
-			subscriptionProviders = await listSubscriptionProviders(remembered.access);
-		} catch {
-			subscriptionProviders = [];
-		}
-	}
+export async function connectModelSubscription(access: string, callbacks: OAuthLoginCallbacks): Promise<void> {
+	const providers = await listSubscriptionProviders(access);
+	if (providers.length === 0) throw new Error("No model subscriptions are available to connect.");
+	const picked = providers.length === 1
+		? providers[0].id
+		: await callbacks.onSelect({
+			message: "Which model subscription?",
+			options: providers.map((provider) => ({ id: provider.id, label: provider.label })),
+		});
+	if (picked === undefined) throw new Error("Connection cancelled");
+	const provider = providers.find((candidate) => candidate.id === picked);
+	await connectSubscription(access, picked, provider?.label ?? picked, callbacks);
+}
 
+interface EmailProvider {
+	id: string;
+	label: string;
+	authorizationEndpoint: string;
+	tokenEndpoint: string;
+	scope: string;
+	clientId: string;
+	configured: boolean;
+}
+
+async function listEmailProviders(access: string): Promise<EmailProvider[]> {
+	const response = await apiFetch(access, "/v1/connections/email-providers");
+	if (!response.ok) throw new Error(await describeFailure(response));
+	const body = (await response.json()) as { providers?: EmailProvider[] };
+	return Array.isArray(body.providers) ? body.providers : [];
+}
+
+async function connectBuiltinEmail(access: string, provider: EmailProvider, callbacks: OAuthLoginCallbacks): Promise<void> {
+	if (!provider.configured) {
+		throw new Error(`${provider.label} is not configured yet. Set the OAuth client on Switchboard, then run /login again.`);
+	}
+	const app: OauthApp = {
+		id: provider.id,
+		name: provider.label,
+		providerSlug: provider.id,
+		authorizationEndpoint: provider.authorizationEndpoint,
+		tokenEndpoint: provider.tokenEndpoint,
+		clientId: provider.clientId,
+		scope: provider.scope,
+	};
+	const authorization = await loopbackAuthorize(app, callbacks);
+	const response = await apiFetch(access, `/v1/connections/email-providers/${encodeURIComponent(provider.id)}/connect`, {
+		method: "POST",
+		body: {
+			code: authorization.code,
+			redirect_uri: authorization.redirectUri,
+			code_verifier: authorization.verifier,
+		},
+	});
+	if (!response.ok) throw new Error(await describeFailure(response));
+	callbacks.onProgress?.(`Connected ${provider.label}`);
+}
+
+export async function connectEmail(access: string, callbacks: OAuthLoginCallbacks): Promise<void> {
+	const providers = await listEmailProviders(access);
 	const options = [
-		{ id: MENU_SIGN_IN, label: remembered === null ? "Sign in to Switchboard" : "Sign in again (switch account)" },
-		...(subscriptionProviders.length > 0
-			? subscriptionProviders.map((provider) => ({ id: `${SUBSCRIPTION_PREFIX}${provider.id}`, label: `Connect ${provider.label}` }))
-			: [{ id: MENU_SUBSCRIPTIONS, label: "Connect a provider subscription (SuperGrok, ...)" }]),
-		{ id: MENU_ADD_OAUTH, label: "+ Add OAuth connection" },
+		...providers.map((provider) => ({ id: provider.id, label: provider.label })),
+		{ id: NEW_APP, label: "+ Register a new email connection" },
 	];
+	const picked = await callbacks.onSelect({ message: "Which email account?", options });
+	if (picked === undefined) throw new Error("Connection cancelled");
+	if (picked === NEW_APP) {
+		await connectCustomOauth(access, callbacks);
+		return;
+	}
+	const provider = providers.find((candidate) => candidate.id === picked);
+	if (!provider) throw new Error("Connection cancelled");
+	await connectBuiltinEmail(access, provider, callbacks);
+}
 
-	const choice = await callbacks.onSelect({ message: "Switchboard", options });
+const MENU_ACCOUNT = "switchboard-account";
+const MENU_EMAIL = "email";
+const MENU_MODEL_SUBSCRIPTION = "model-subscription";
+
+export async function switchboardLogin(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
+	const choice = await callbacks.onSelect({
+		message: "Switchboard",
+		options: [
+			{ id: MENU_ACCOUNT, label: "Switchboard account" },
+			{ id: MENU_EMAIL, label: "Email" },
+			{ id: MENU_MODEL_SUBSCRIPTION, label: "Model subscription" },
+		],
+	});
 	if (choice === undefined) throw new Error("Sign-in cancelled");
-	if (choice === MENU_SIGN_IN) return deviceLogin(callbacks);
+	if (choice === MENU_ACCOUNT) return deviceLogin(callbacks);
 
-	const credentials = await ensureSession(callbacks);
-
-	if (choice === MENU_ADD_OAUTH) {
-		await connectCustomOauth(credentials.access, callbacks);
-		return credentials;
-	}
-
-	let providerId: string;
-	let providerLabel: string;
-	if (choice.startsWith(SUBSCRIPTION_PREFIX)) {
-		providerId = choice.slice(SUBSCRIPTION_PREFIX.length);
-		providerLabel = subscriptionProviders.find((provider) => provider.id === providerId)?.label ?? providerId;
-	} else {
-		const providers = await listSubscriptionProviders(credentials.access);
-		if (providers.length === 0) throw new Error("No subscription providers are available to connect.");
-		const picked = providers.length === 1
-			? providers[0].id
-			: await callbacks.onSelect({
-				message: "Which subscription?",
-				options: providers.map((provider) => ({ id: provider.id, label: provider.label })),
-			});
-		if (picked === undefined) throw new Error("Connection cancelled");
-		providerId = picked;
-		providerLabel = providers.find((provider) => provider.id === providerId)?.label ?? providerId;
-	}
-
-	await connectSubscription(credentials.access, providerId, providerLabel, callbacks);
+	const credentials = await requireSwitchboardSession(callbacks);
+	if (choice === MENU_EMAIL) await connectEmail(credentials.access, callbacks);
+	else await connectModelSubscription(credentials.access, callbacks);
 	return credentials;
 }
