@@ -1,3 +1,4 @@
+import type { MicroCentsPerMillionTokens } from "./money.ts";
 import type { Model } from "@earendil-works/pi-ai";
 
 export const KIND_TO_API = {
@@ -22,9 +23,9 @@ export interface ModelRecord {
 }
 
 export interface ModelRecordPrice {
-	input_micro_cents_per_mtok: number;
-	output_micro_cents_per_mtok: number;
-	cached_input_micro_cents_per_mtok: number | null;
+	input_micro_cents_per_mtok: MicroCentsPerMillionTokens;
+	output_micro_cents_per_mtok: MicroCentsPerMillionTokens;
+	cached_input_micro_cents_per_mtok: MicroCentsPerMillionTokens | null;
 	effective_at: number;
 }
 

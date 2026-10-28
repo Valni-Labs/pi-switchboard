@@ -12,9 +12,9 @@ test("SWB-1032 names the most the request can cost and the free balance", async 
 		error: "This request could cost more than your available balance",
 		fault: "client",
 		requestId: "rqe_1",
-		requiredMicroCents: 740_000_001,
-		availableMicroCents: 150_000_000,
-		balanceMicroCents: 150_000_000,
+		required: 740_000_001,
+		available: 150_000_000,
+		balance: 150_000_000,
 	}));
 	assert.equal(
 		message,
