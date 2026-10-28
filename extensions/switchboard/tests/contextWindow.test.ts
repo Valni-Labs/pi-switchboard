@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildModelConfigs } from "../catalog.ts";
 import type { ModelsPage, RegistryModel } from "../types.ts";
+import { microCentsPerMillionTokens } from "../money.ts";
 
 const price = {
-	input_micro_cents_per_mtok: 100,
-	output_micro_cents_per_mtok: 200,
+	input_micro_cents_per_mtok: microCentsPerMillionTokens(100),
+	output_micro_cents_per_mtok: microCentsPerMillionTokens(200),
 	cached_input_micro_cents_per_mtok: null,
 	effective_at: 0,
 };

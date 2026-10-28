@@ -1,3 +1,4 @@
+import { dollarsPerMillionTokens, microCentsPerMillionTokens } from "./money.ts";
 import { existsSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,7 +10,6 @@ import { KIND_TO_API, type KindProfile, type ModelRecord, type ModelRecordPrice,
 
 const MODELS_PATH = "/v1/models";
 const CATALOG_FETCH_TIMEOUT_MS = 10_000;
-const MICRO_CENTS_PER_DOLLAR = 100_000_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 
@@ -87,9 +87,9 @@ function supportsReasoning(kindTag: SwitchboardKind, profile: KindProfile): bool
 function toCost(price: ModelRecordPrice | undefined, registryModel: RegistryModel | undefined) {
 	if (price === undefined) return registryModel?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 	return {
-		input: price.input_micro_cents_per_mtok / MICRO_CENTS_PER_DOLLAR,
-		output: price.output_micro_cents_per_mtok / MICRO_CENTS_PER_DOLLAR,
-		cacheRead: (price.cached_input_micro_cents_per_mtok ?? 0) / MICRO_CENTS_PER_DOLLAR,
+		input: dollarsPerMillionTokens(price.input_micro_cents_per_mtok),
+		output: dollarsPerMillionTokens(price.output_micro_cents_per_mtok),
+		cacheRead: price.cached_input_micro_cents_per_mtok === null ? 0 : dollarsPerMillionTokens(price.cached_input_micro_cents_per_mtok),
 		cacheWrite: 0,
 	};
 }
@@ -135,7 +135,19 @@ export async function discoverCatalog(baseUrl: string, bearer: string, signal?: 
 	if (!response.ok) {
 		throw new Error(singleLine(await describeFailure(response)));
 	}
-	return (await response.json()) as ModelsPage;
+	const page = (await response.json()) as ModelsPage;
+	return { ...page, prices: checkedPrices(page.prices) };
+}
+
+function checkedPrices(prices: Record<string, ModelRecordPrice>): Record<string, ModelRecordPrice> {
+	return Object.fromEntries(Object.entries(prices).map(([modelId, price]) => [modelId, {
+		...price,
+		input_micro_cents_per_mtok: microCentsPerMillionTokens(price.input_micro_cents_per_mtok),
+		output_micro_cents_per_mtok: microCentsPerMillionTokens(price.output_micro_cents_per_mtok),
+		cached_input_micro_cents_per_mtok: price.cached_input_micro_cents_per_mtok === null
+			? null
+			: microCentsPerMillionTokens(price.cached_input_micro_cents_per_mtok),
+	}]));
 }
 
 export function credentialBearer(credential: Credential | undefined): string | null {

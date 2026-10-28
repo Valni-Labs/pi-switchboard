@@ -1,3 +1,4 @@
+import { CENTS_PER_DOLLAR, MICRO_CENTS_PER_CENT, microCents, type MicroCents } from "./money.ts";
 import { EVENT_STREAM_CONTENT_TYPE } from "./constants.ts";
 import { resolveBaseUrl } from "./config.ts";
 import type { SwitchboardKind } from "./types.ts";
@@ -17,19 +18,17 @@ export interface SwitchboardErrorEnvelope {
 	upstreamStatus?: number;
 	requestedMaxTokens?: number;
 	maxOutputTokens?: number;
-	requiredMicros?: number;
-	availableMicros?: number;
+	required?: number;
+	available?: number;
 }
 
-const BALANCE_MICROS_PER_CENT = 1_000_000;
-const CENTS_PER_DOLLAR = 100;
 
-function dollarsRoundedUp(micros: number): string {
-	return `$${(Math.ceil(micros / BALANCE_MICROS_PER_CENT) / CENTS_PER_DOLLAR).toFixed(2)}`;
+function dollarsRoundedUp(amount: MicroCents): string {
+	return `$${(Math.ceil(amount / MICRO_CENTS_PER_CENT) / CENTS_PER_DOLLAR).toFixed(2)}`;
 }
 
-function dollarsRoundedDown(micros: number): string {
-	const cents = Math.floor(micros / BALANCE_MICROS_PER_CENT);
+function dollarsRoundedDown(amount: MicroCents): string {
+	const cents = Math.floor(amount / MICRO_CENTS_PER_CENT);
 	const sign = cents < 0 ? "-" : "";
 	return `${sign}$${(Math.abs(cents) / CENTS_PER_DOLLAR).toFixed(2)}`;
 }
@@ -64,8 +63,8 @@ function switchboardGuidance(envelope: SwitchboardErrorEnvelope & { code: string
 		case "SWB-1007":
 			return `Your Switchboard balance is below zero. Upgrade your subscription or add funds at ${PORTAL_URL} to continue.`;
 		case "SWB-1032":
-			return typeof envelope.requiredMicros === "number" && typeof envelope.availableMicros === "number"
-				? `This request could cost up to ${dollarsRoundedUp(envelope.requiredMicros)}, and ${dollarsRoundedDown(envelope.availableMicros)} of your balance is free. Switchboard holds the most a request can cost until it finishes. Lower max_tokens, pick a smaller model, or add funds at ${PORTAL_URL}.`
+			return typeof envelope.required === "number" && typeof envelope.available === "number"
+				? `This request could cost up to ${dollarsRoundedUp(microCents(envelope.required))}, and ${dollarsRoundedDown(microCents(envelope.available))} of your balance is free. Switchboard holds the most a request can cost until it finishes. Lower max_tokens, pick a smaller model, or add funds at ${PORTAL_URL}.`
 				: `This request could cost more than your free balance. Lower max_tokens, pick a smaller model, or add funds at ${PORTAL_URL}.`;
 		case "SWB-1003":
 		case "SWB-1004":
