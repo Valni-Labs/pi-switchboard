@@ -69,7 +69,7 @@ Tested against pi v0.80.x. The extension reads pi's bundled model registry for c
 
 ## Errors
 
-Switchboard errors are translated for the person at the keyboard, not the API developer, and wrapped in each provider's native error shape so pi displays them as plain messages. Account conditions come with their fix: a wrong key says to log in to Switchboard and get a key, an empty balance says to top up, spend and rate limits point at the portal, a disallowed model says to switch models. Provider outages say to retry or switch models, and anything internal to Switchboard says so and asks for the request id. Every message ends with the code and request id for support, e.g. `Out of Switchboard credit. Top up at https://valni.app/platform and retry. [SWB-1007, request rqe_...]`.
+Switchboard errors are translated for the person at the keyboard, not the API developer, and wrapped in each provider's native error shape so pi displays them as plain messages. Account conditions come with their fix: a wrong key says to log in to Switchboard and get a key, a balance below zero says to upgrade or add funds, a request that could cost more than the free balance says how much it needs and to lower max_tokens, pick a smaller model, or add funds, spend and rate limits point at the portal, a disallowed model says to switch models. Provider outages say to retry or switch models, and anything internal to Switchboard says so and asks for the request id. Every message ends with the code and request id for support, e.g. `Your Switchboard balance is below zero. Upgrade your subscription or add funds at https://valni.app/platform to continue. [SWB-1007, request rqe_...]`.
 
 ## Browser tools
 
