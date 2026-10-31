@@ -18,6 +18,7 @@ import { deviceRefresh } from "./device-auth.ts";
 import { clearPendingAsks, consumePendingAsk, installEnvelopeFetch, onSteer } from "./envelope.ts";
 import { startSessionStream, stopSessionStream } from "./sessionStream.ts";
 import { registerParticipantFraming } from "./participant.ts";
+import { registerRemote } from "./remote.ts";
 import { registerServedSkills } from "./skills.ts";
 import { registerStartupNotice } from "./startup.ts";
 import { discoverTools } from "./toolProxy.ts";
@@ -49,6 +50,7 @@ export default async function (pi: ExtensionAPI) {
 	registerServedSkills(pi);
 	registerServedTools(pi);
 	registerStartupNotice(pi);
+	registerRemote(pi);
 	onSteer((steer, deliverAs) => {
 		pi.sendUserMessage(steer, { deliverAs });
 	});
