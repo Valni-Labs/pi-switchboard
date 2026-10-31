@@ -83,19 +83,104 @@ export function bridgeUrl(baseUrl: string): string {
 	return url.toString();
 }
 
+export interface WatchRequest {
+	messageId: string;
+	text: string;
+}
+
+export class WatchRequestQueue {
+	private waiting: WatchRequest[] = [];
+	private running: string | null = null;
+
+	get current(): string | null {
+		return this.running;
+	}
+
+	enqueue(request: WatchRequest): void {
+		this.waiting.push(request);
+	}
+
+	startNext(): WatchRequest | null {
+		if (this.running !== null) return null;
+		const next = this.waiting.shift();
+		if (next === undefined) return null;
+		this.running = next.messageId;
+		return next;
+	}
+
+	finish(): string | null {
+		const finished = this.running;
+		this.running = null;
+		return finished;
+	}
+
+	abortTarget(messageId: string | null): "current" | "queued" | "none" {
+		if (messageId === null) return this.running === null ? "none" : "current";
+		if (messageId === this.running) return "current";
+		const before = this.waiting.length;
+		this.waiting = this.waiting.filter((request) => request.messageId !== messageId);
+		return this.waiting.length < before ? "queued" : "none";
+	}
+
+	clear(): void {
+		this.waiting = [];
+		this.running = null;
+	}
+}
+
+export const MAX_UNSENT_OUTCOMES = 20;
+
+export class OutcomeOutbox {
+	private frames: string[] = [];
+
+	push(frame: string): void {
+		this.frames = [...this.frames, frame].slice(-MAX_UNSENT_OUTCOMES);
+	}
+
+	drain(): string[] {
+		const drained = this.frames;
+		this.frames = [];
+		return drained;
+	}
+
+	clear(): void {
+		this.frames = [];
+	}
+}
+
 let activeSocket: WebSocket | null = null;
 let activeContext: ExtensionContext | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reauthTimer: ReturnType<typeof setInterval> | null = null;
 let reconnectAttempt = 0;
 let stopped = true;
-let currentMessageId: string | null = null;
+let generation = 0;
 let watchTurnPending = false;
+let settledOutcome: TurnOutcome | null = null;
+const requests = new WatchRequestQueue();
+const outbox = new OutcomeOutbox();
 
-function send(frame: Record<string, unknown>): void {
+function socketOpen(): WebSocket | null {
 	const socket = activeSocket;
-	if (socket === null || socket.readyState !== WebSocket.OPEN) return;
-	socket.send(JSON.stringify(frame));
+	return socket !== null && socket.readyState === WebSocket.OPEN ? socket : null;
+}
+
+function sendStatus(frame: Record<string, unknown>): void {
+	socketOpen()?.send(JSON.stringify(frame));
+}
+
+function sendOutcome(frame: Record<string, unknown>): void {
+	const encoded = JSON.stringify(frame);
+	const socket = socketOpen();
+	if (socket === null) {
+		outbox.push(encoded);
+		return;
+	}
+	socket.send(encoded);
+}
+
+function flushOutbox(socket: WebSocket): void {
+	for (const frame of outbox.drain()) socket.send(frame);
 }
 
 function setStatus(text: string | undefined): void {
@@ -115,35 +200,49 @@ function scheduleReconnect(pi: ExtensionAPI): void {
 	reconnectTimer.unref?.();
 }
 
-function handleFrame(pi: ExtensionAPI, raw: unknown): void {
+function dispatchNext(pi: ExtensionAPI): void {
+	if (activeContext === null || !activeContext.isIdle()) return;
+	const next = requests.startNext();
+	if (next === null) return;
+	watchTurnPending = true;
+	pi.sendUserMessage(next.text);
+}
+
+function handleFrame(pi: ExtensionAPI, socket: WebSocket, raw: unknown): void {
 	const frame = parseRelayFrame(raw);
 	if (frame === null || activeContext === null) return;
 	if (frame.type === "ready") {
 		reconnectAttempt = 0;
 		setStatus("remote: on");
+		flushOutbox(socket);
 		return;
 	}
 	if (frame.type === "abort") {
-		activeContext.abort();
+		const target = requests.abortTarget(frame.message_id);
+		if (target === "current") activeContext.abort();
+		if (target === "queued" && frame.message_id !== null) {
+			sendOutcome({ type: "error", message_id: frame.message_id, text: "Stopped." });
+		}
 		return;
 	}
-	currentMessageId = frame.message_id;
-	watchTurnPending = true;
-	if (activeContext.isIdle()) pi.sendUserMessage(frame.text);
-	else pi.sendUserMessage(frame.text, { deliverAs: "followUp" });
+	requests.enqueue({ messageId: frame.message_id, text: frame.text });
+	dispatchNext(pi);
 }
 
 async function sendReauth(): Promise<void> {
 	if (activeContext === null) return;
 	const token = await resolveStreamToken(activeContext);
-	if (token !== null) send({ type: "reauth", token });
+	if (token !== null) sendStatus({ type: "reauth", token });
 }
 
 async function connect(pi: ExtensionAPI): Promise<void> {
-	if (stopped || activeSocket !== null || activeContext === null) return;
-	const token = await resolveStreamToken(activeContext);
+	const context = activeContext;
+	if (stopped || activeSocket !== null || context === null) return;
+	const attempt = generation;
+	const token = await resolveStreamToken(context);
+	if (stopped || attempt !== generation || activeSocket !== null) return;
 	if (token === null || !token.startsWith("vst_")) {
-		activeContext.ui.notify("Remote needs a Switchboard login. Run /login and choose Switchboard.", "error");
+		context.ui.notify("Remote needs a Switchboard login. Run /login and choose Switchboard.", "error");
 		stopRemote();
 		return;
 	}
@@ -158,10 +257,12 @@ async function connect(pi: ExtensionAPI): Promise<void> {
 	activeSocket = socket;
 
 	socket.addEventListener("message", (event: MessageEvent) => {
-		handleFrame(pi, event.data);
+		if (activeSocket !== socket) return;
+		handleFrame(pi, socket, event.data);
 	});
 	socket.addEventListener("close", (event: CloseEvent) => {
-		if (activeSocket === socket) activeSocket = null;
+		if (activeSocket !== socket) return;
+		activeSocket = null;
 		if (event.code === CLOSE_CODE_REPLACED) {
 			activeContext?.ui.notify("Remote moved to another Valni session.", "warning");
 			stopRemote();
@@ -170,7 +271,8 @@ async function connect(pi: ExtensionAPI): Promise<void> {
 		scheduleReconnect(pi);
 	});
 	socket.addEventListener("error", () => {
-		if (activeSocket === socket) activeSocket = null;
+		if (activeSocket !== socket) return;
+		activeSocket = null;
 		try {
 			socket.close();
 		} catch {
@@ -193,9 +295,12 @@ export function startRemote(pi: ExtensionAPI, context: ExtensionContext): void {
 
 export function stopRemote(): void {
 	stopped = true;
+	generation += 1;
 	reconnectAttempt = 0;
-	currentMessageId = null;
 	watchTurnPending = false;
+	settledOutcome = null;
+	requests.clear();
+	outbox.clear();
 	if (reconnectTimer !== null) {
 		clearTimeout(reconnectTimer);
 		reconnectTimer = null;
@@ -243,14 +348,22 @@ export function registerRemote(pi: ExtensionAPI): void {
 		return { systemPrompt: event.systemPrompt + SPEECH_INSTRUCTION };
 	});
 	pi.on("tool_execution_start", (event) => {
-		if (currentMessageId === null) return;
-		send({ type: "status", message_id: currentMessageId, text: `Running ${event.toolName}` });
+		const messageId = requests.current;
+		if (messageId === null) return;
+		sendStatus({ type: "status", message_id: messageId, text: `Running ${event.toolName}` });
 	});
 	pi.on("agent_end", (event) => {
-		if (currentMessageId === null) return;
-		const outcome = turnOutcome(event.messages);
-		send({ type: outcome.type, message_id: currentMessageId, text: outcome.text });
-		currentMessageId = null;
+		if (requests.current === null) return;
+		settledOutcome = turnOutcome(event.messages);
+	});
+	pi.on("agent_settled", () => {
+		const outcome = settledOutcome;
+		settledOutcome = null;
+		if (outcome !== null) {
+			const messageId = requests.finish();
+			if (messageId !== null) sendOutcome({ type: outcome.type, message_id: messageId, text: outcome.text });
+		}
+		if (!stopped) dispatchNext(pi);
 	});
 	pi.on("session_shutdown", () => {
 		stopRemote();

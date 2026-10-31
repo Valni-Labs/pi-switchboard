@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bridgeUrl, parseRelayFrame, turnOutcome } from "../remote.ts";
+import { MAX_UNSENT_OUTCOMES, OutcomeOutbox, WatchRequestQueue, bridgeUrl, parseRelayFrame, turnOutcome } from "../remote.ts";
 
 test("bridge url switches https to wss", () => {
 	assert.equal(bridgeUrl("https://switchboard.valni.app"), "wss://switchboard.valni.app/v1/remote/bridge");
@@ -44,4 +44,46 @@ test("an aborted or failed turn becomes an error outcome", () => {
 		text: "SWB-1007",
 	});
 	assert.deepEqual(turnOutcome([]), { type: "error", text: "No reply was produced." });
+});
+
+test("watch requests run one at a time in arrival order", () => {
+	const queue = new WatchRequestQueue();
+	queue.enqueue({ messageId: "a", text: "first" });
+	queue.enqueue({ messageId: "b", text: "second" });
+	assert.deepEqual(queue.startNext(), { messageId: "a", text: "first" });
+	assert.equal(queue.startNext(), null);
+	assert.equal(queue.current, "a");
+	assert.equal(queue.finish(), "a");
+	assert.deepEqual(queue.startNext(), { messageId: "b", text: "second" });
+});
+
+test("a stop aimed at a finished request does not abort the current one", () => {
+	const queue = new WatchRequestQueue();
+	queue.enqueue({ messageId: "a", text: "first" });
+	queue.startNext();
+	queue.finish();
+	queue.enqueue({ messageId: "b", text: "second" });
+	queue.startNext();
+	assert.equal(queue.abortTarget("a"), "none");
+	assert.equal(queue.abortTarget("b"), "current");
+	assert.equal(queue.abortTarget(null), "current");
+});
+
+test("a stop aimed at a queued request removes it without touching the current one", () => {
+	const queue = new WatchRequestQueue();
+	queue.enqueue({ messageId: "a", text: "first" });
+	queue.enqueue({ messageId: "b", text: "second" });
+	queue.startNext();
+	assert.equal(queue.abortTarget("b"), "queued");
+	queue.finish();
+	assert.equal(queue.startNext(), null);
+});
+
+test("undelivered outcomes are kept, bounded, and drained once", () => {
+	const outbox = new OutcomeOutbox();
+	for (let index = 0; index < MAX_UNSENT_OUTCOMES + 3; index += 1) outbox.push(String(index));
+	const drained = outbox.drain();
+	assert.equal(drained.length, MAX_UNSENT_OUTCOMES);
+	assert.equal(drained[0], "3");
+	assert.deepEqual(outbox.drain(), []);
 });
