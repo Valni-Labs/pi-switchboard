@@ -30,7 +30,7 @@ export function spawnedStreamKey(connectionId: string | null, envKey: string | u
 	return key ? key : null;
 }
 
-async function resolveStreamToken(context: ExtensionContext): Promise<string | null> {
+export async function resolveStreamToken(context: ExtensionContext): Promise<string | null> {
 	const connectionId = spawnedConnectionId();
 	if (connectionId !== null) return spawnedStreamKey(connectionId, process.env[KEY_ENV]);
 	let resolution: Awaited<ReturnType<ExtensionContext["modelRegistry"]["getProviderAuth"]>>;
