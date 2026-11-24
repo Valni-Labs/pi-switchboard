@@ -95,6 +95,18 @@ pi install https://github.com/Valni-Labs/bubbins-spawn
 
 Switchboard names the extension that runs each local tool, so a missing one answers with its own install command.
 
+## Voice dictation
+
+Press `ctrl+q` and talk. Press `ctrl+q` again and your words land in the prompt, where you can read and fix them before you press Enter. `/voice` does the same. Recording stops by itself after 10 minutes.
+
+Switchboard turns the recording into text with Grok Voice Transcribe 2.0 and bills it per second of audio, like any other model on your account. Nothing reaches the agent until you send it.
+
+Voice uses [sox](https://sox.sourceforge.net) to listen to your microphone. Install it once:
+
+```
+brew install sox
+```
+
 ## Skills
 
 Once you are signed in, pi-switchboard loads the skills your Switchboard account enables for you, next to your local skills. Your organization offers skills and you adopt the ones you want in the Switchboard portal; by default you get guides to Switchboard and the Valni CLI. Signed out, no Switchboard skills load. After you sign in or change skills in the portal, run `/reload`.

@@ -23,6 +23,7 @@ import { registerServedSkills } from "./skills.ts";
 import { registerStartupNotice } from "./startup.ts";
 import { discoverTools } from "./toolProxy.ts";
 import { registerServedTools, registerServerTools } from "./tools.ts";
+import { registerVoice } from "./voice.ts";
 
 const PROVIDER_NAME = "Switchboard";
 const APPROVAL_DIALOG_TITLE = "Switchboard approval required";
@@ -51,6 +52,7 @@ export default async function (pi: ExtensionAPI) {
 	registerServedTools(pi);
 	registerStartupNotice(pi);
 	registerRemote(pi);
+	registerVoice(pi);
 	onSteer((steer, deliverAs) => {
 		pi.sendUserMessage(steer, { deliverAs });
 	});
