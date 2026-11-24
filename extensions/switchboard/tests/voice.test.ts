@@ -8,6 +8,7 @@ import {
 	DICTATION_MODEL,
 	MAXIMUM_RECORDING_SECONDS,
 	SAMPLE_RATE_HERTZ,
+	SOX_MISSING_MESSAGE,
 	hasSpokenAudio,
 	parseTranscription,
 	recorderArguments,
@@ -88,24 +89,37 @@ function fakeRecorder(): ChildProcess {
 	return recorder;
 }
 
+function missingRecorder(): ChildProcess {
+	const recorder = new EventEmitter() as unknown as ChildProcess;
+	recorder.kill = () => true;
+	queueMicrotask(() =>
+		recorder.emit("error", Object.assign(new Error("spawn rec ENOENT"), { code: "ENOENT" })),
+	);
+	return recorder;
+}
+
 interface FakeSession {
 	context: ExtensionContext;
 	pasted: string[];
 	notices: string[];
+	status: () => string | undefined;
 }
 
 function fakeSession(): FakeSession {
 	const pasted: string[] = [];
 	const notices: string[] = [];
+	let status: string | undefined;
 	const context = {
 		mode: "tui",
 		ui: {
-			setStatus: () => {},
+			setStatus: (_key: string, text: string | undefined) => {
+				status = text;
+			},
 			notify: (message: string) => notices.push(message),
 			pasteToEditor: (text: string) => pasted.push(text),
 		},
 	} as unknown as ExtensionContext;
-	return { context, pasted, notices };
+	return { context, pasted, notices, status: () => status };
 }
 
 const SPOKEN_WAV = new Uint8Array(new ArrayBuffer(128));
@@ -155,7 +169,7 @@ test("shutdown while the recorder is starting never opens the microphone and rem
 		transcribe: async () => "hello",
 	});
 	const starting = controller.toggle(session.context);
-	controller.shutdown();
+	controller.shutdown(session.context);
 	directory.resolve("/tmp/voice-test");
 	await starting;
 	await settle();
@@ -185,11 +199,14 @@ test("shutdown during transcription cancels it and keeps its text out of the nex
 	await controller.toggle(oldSession.context);
 	const stopping = controller.toggle(oldSession.context);
 	await settle();
-	controller.shutdown();
+	assert.equal(oldSession.status(), "transcribing…");
+	controller.shutdown(oldSession.context);
 	assert.equal(signal?.aborted, true);
+	assert.equal(oldSession.status(), undefined);
 	await controller.toggle(newSession.context);
 	transcription.resolve("old words");
 	await stopping;
+	assert.equal(newSession.status(), "● recording, ctrl+q to stop");
 	assert.deepEqual(oldSession.pasted, []);
 	assert.deepEqual(newSession.pasted, []);
 	assert.deepEqual(oldSession.notices, []);
@@ -197,4 +214,25 @@ test("shutdown during transcription cancels it and keeps its text out of the nex
 	await controller.toggle(newSession.context);
 	await settle();
 	assert.equal(spawned, 2);
+});
+
+test("a fast second press with sox missing still says to install sox", async () => {
+	const directory = deferred<string>();
+	const session = fakeSession();
+	const controller = createVoiceController({
+		makeDirectory: () => directory.promise,
+		removeDirectory: async () => {},
+		spawnRecorder: () => missingRecorder(),
+		readRecording: async () => {
+			throw Object.assign(new Error("ENOENT: dictation.wav"), { code: "ENOENT" });
+		},
+		transcribe: async () => "hello",
+	});
+	const first = controller.toggle(session.context);
+	const second = controller.toggle(session.context);
+	directory.resolve("/tmp/voice-test");
+	await Promise.all([first, second]);
+	await settle();
+	assert.deepEqual(session.notices, [SOX_MISSING_MESSAGE]);
+	assert.equal(session.status(), undefined);
 });

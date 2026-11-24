@@ -75,12 +75,22 @@ export interface VoiceDependencies {
 type VoiceState =
 	| { kind: "idle" }
 	| { kind: "starting"; stopRequested: boolean }
-	| { kind: "recording"; recorder: ChildProcess; directory: string; outputPath: string; exited: Promise<number | null> }
+	| {
+			kind: "recording";
+			recorder: ChildProcess;
+			directory: string;
+			outputPath: string;
+			exited: Promise<NodeJS.ErrnoException | null>;
+	  }
 	| { kind: "transcribing"; abort: AbortController };
 
 export interface VoiceController {
 	toggle: (context: ExtensionContext) => Promise<void>;
-	shutdown: () => void;
+	shutdown: (context: ExtensionContext) => void;
+}
+
+function recorderFailureMessage(error: NodeJS.ErrnoException): string {
+	return error.code === "ENOENT" ? SOX_MISSING_MESSAGE : `Voice could not start the microphone: ${error.message}`;
 }
 
 function setStatus(context: ExtensionContext, text: string | undefined): void {
@@ -146,17 +156,16 @@ export function createVoiceController(dependencies: VoiceDependencies = defaultV
 		}
 		const outputPath = join(directory, RECORDING_FILE_NAME);
 		const recorder = dependencies.spawnRecorder(outputPath);
-		const exited = new Promise<number | null>((resolve) => {
-			recorder.once("exit", (code) => resolve(code));
-			recorder.once("error", () => resolve(null));
+		const exited = new Promise<NodeJS.ErrnoException | null>((resolve) => {
+			recorder.once("exit", () => resolve(null));
+			recorder.once("error", (error: NodeJS.ErrnoException) => resolve(error));
 		});
 		recorder.once("error", (error: NodeJS.ErrnoException) => {
 			if (state.kind !== "recording" || state.recorder !== recorder) return;
 			state = { kind: "idle" };
 			setStatus(context, undefined);
 			void dependencies.removeDirectory(directory);
-			const message = error.code === "ENOENT" ? SOX_MISSING_MESSAGE : `Voice could not start the microphone: ${error.message}`;
-			context.ui.notify(message, "error");
+			context.ui.notify(recorderFailureMessage(error), "error");
 		});
 		recorder.once("exit", () => {
 			if (state.kind === "recording" && state.recorder === recorder) void stopRecording(context);
@@ -175,7 +184,8 @@ export function createVoiceController(dependencies: VoiceDependencies = defaultV
 		setStatus(context, "transcribing…");
 		try {
 			recorder.kill("SIGINT");
-			await exited;
+			const failure = await exited;
+			if (failure !== null) throw new Error(recorderFailureMessage(failure));
 			const audio = await dependencies.readRecording(outputPath);
 			if (generation !== owner) return;
 			if (!hasSpokenAudio(audio)) {
@@ -211,10 +221,11 @@ export function createVoiceController(dependencies: VoiceDependencies = defaultV
 		if (state.kind === "recording") return stopRecording(context);
 	}
 
-	function shutdown(): void {
+	function shutdown(context: ExtensionContext): void {
 		generation += 1;
 		const current = state;
 		state = { kind: "idle" };
+		if (current.kind !== "idle") setStatus(context, undefined);
 		if (current.kind === "recording") {
 			current.recorder.kill("SIGINT");
 			void dependencies.removeDirectory(current.directory);
@@ -234,5 +245,5 @@ export function registerVoice(pi: ExtensionAPI, controller: VoiceController = cr
 		description: `Start or stop voice dictation into the prompt (same as ${VOICE_SHORTCUT})`,
 		handler: async (_args, context) => controller.toggle(context),
 	});
-	pi.on("session_shutdown", () => controller.shutdown());
+	pi.on("session_shutdown", (_event, context) => controller.shutdown(context));
 }
